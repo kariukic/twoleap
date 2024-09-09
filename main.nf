@@ -22,15 +22,13 @@ DD
 PS
 */
 workflow {
-    // // bp_ch = Run_BP( true )
-    // // split_ch = Split( true ) //bp_ch )
-    // di_ch = Run_DI ( true) //split_ch )
-    // avg_ch = Average ( true ) //di_ch )
-    dd_ch = Run_DD ( true ) //avg_ch )
+    bp_ch = Run_BP( true )
+    split_ch = Split( bp_ch )
+    di_ch = Run_DI ( split_ch )
+    avg_ch = Average ( di_ch )
+    dd_ch = Run_DD ( avg_ch )
     Run_WS( dd_ch )
 }
-
-
 
 import groovy.json.JsonOutput
 process GetParams {
@@ -116,7 +114,7 @@ workflow Split {
 
         output_mslist = file(params.out.logs).resolve( "di_mses.txt" )
 
-        ConcatFrequencySplitTime ( ready, mses, nodes_ch, params.split.ntimes, params.ddecal.bp.outcol, params.split.msout, output_mslist )
+        ConcatFrequencySplitTime ( ready, mses, nodes_ch, params.split.ntimes, params.ddecal.bp.outcol, params.split.msout, output_mslist, params.split.mses_per_node )
         
     emit:
 

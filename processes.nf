@@ -232,6 +232,7 @@ process ConcatFrequencySplitTime {
         val ntimes
         val column
         val msout
+        val mses_per_node
         val outtxt
 
     output:
@@ -240,7 +241,7 @@ process ConcatFrequencySplitTime {
     shell:
         nd  = nodes.join(' ')
         """
-        python3 !{projectDir}/templates/concat_split.py --mslist !{msfiles} --msout !{msout} --ntimes !{ntimes} --nodes !{nd} --datapath !{params.data.path} --datacolumn !{column} --outtxt ${outtxt} > ${params.out.logs}/freq_concat.log 2>&1
+        python3 !{projectDir}/templates/concat_split.py --mslist !{msfiles} --msout !{msout} --ntimes !{ntimes} --nodes !{nd} --datapath !{params.data.path} --datacolumn !{column} --output_ms_list_file !{outtxt} --nmses_per_node !{mses_per_node} > ${params.out.logs}/freq_concat.log 2>&1
         """
 
 }

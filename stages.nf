@@ -6,7 +6,6 @@ include {
     DP3Calibrate;
     ApplyGains;
     AOqualityCollect;
-    ConcatFrequencySplitTime;
     ApplyBEAM;
     AverageDItoDDMS;
     MakeDP3ClustersListFile;

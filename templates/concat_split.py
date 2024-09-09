@@ -94,7 +94,7 @@ parser.add_argument(
 
 parser.add_argument(
     "-z",
-    "--outtxt",
+    "--output_ms_list_file",
     help="output txtfile with all the paths of the output MS",
     required=False,
     type=str,
@@ -289,7 +289,7 @@ def concatSubbands(
     nmses_per_node=1,
     tolerance=0.25,
     parset=None,
-    outtxt=None,
+    output_ms_list_file=None,
     dry_run=False,
 ):
     logging.info(f"Total MS files: {len(all_ms_files)}")
@@ -338,11 +338,11 @@ def concatSubbands(
             dry_run=dry_run,
         )
 
-        if outtxt:
-            with open(outtxt, "w") as f:
+        if output_ms_list_file:
+            with open(output_ms_list_file, "w") as f:
                 for outms in all_msout_names:
                     f.write(f"{outms}\n")
-
+            logging.info(f"wrote the list of mses to: {output_ms_list_file}")
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -374,6 +374,6 @@ if __name__ == "__main__":
         nmses_per_node=args.nmses_per_node,
         tolerance=args.tolerance,
         parset=args.parset,
-        outtxt=args.outtxt,
+        output_ms_list_file=args.output_ms_list_file,
         dry_run=args.dry_run,
     )
