@@ -1,0 +1,6 @@
+msin.datacolumn=BP_CORRECTED
+msout=.
+msout.datacolumn=BP_ELEMENT_CORRECTED
+steps=[applybeam]
+applybeam.beammode = element
+applybeam.invert = true

@@ -1,0 +1,16 @@
+numthreads = 40
+msin.datacolumn = DATA
+msout = .
+steps = [ddecal]
+ddecal.usebeammodel = true
+ddecal.beammode = full
+ddecal.correctfreqsmearing = true
+ddecal.beamproximitylimit = 600
+ddecal.mode = diagonal
+ddecal.uvlambdamin = 50
+ddecal.uvlambdamax = 5000
+ddecal.solint = 0
+ddecal.nchan = 3
+ddecal.maxiter = 200
+ddecal.propagatesolutions = true
+ddecal.propagateconvergedonly = true
