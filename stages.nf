@@ -34,6 +34,13 @@ workflow {
 
     }
 
+    if ( params.stage == "AT" ) {
+        
+        ATEAMS ( params.ch_in )
+
+    }
+
+
     if ( params.stage == "DD" ) {
         
         DD ( params.ch_in )
@@ -124,6 +131,39 @@ workflow AVG {
         AverageDItoDDMS.out.done_averaging
 
 }
+
+
+workflow ATEAMS {
+    take:
+        start_ch
+
+    main:
+
+        mset_ch = channel.fromPath( "${params.data.path}/${params.average.ditodd.msout}_T*.MS", glob: true, checkIfExists: true, type: 'dir' )
+
+        clip_ch = ClipData( mset_ch )
+
+        calibrate_ch = DP3Calibrate( start_ch, clip_ch, params.ddecal.ateams.parset, params.ddecal.ateams.sourcedb, params.ddecal.ateams.sols, params.ddecal.ateams.incol, params.ddecal.ateams.solint )
+
+        all_solutions_ch =  mset_ch.collect { it + "/${params.ddecal.ateams.sols}" }
+
+        // clusters_ch  = MakeDP3ClustersListFile( calibrate_ch.collect(), params.number_of_clusters, "clusters_list.txt" )
+        clusters_ch = channel.of( params.ddecal.ateams.subtract.clusters )
+
+        mset_and_sourcedb_ch = mset_ch.flatten().combine( channel.of( params.ddecal.ateams.sourcedb ) )
+
+        mset_sourcedb_solutions_and_clusters_ch = mset_and_sourcedb_ch.merge( all_solutions_ch.flatten() ).combine( clusters_ch )
+
+        subtract_ncp_ch = SubtractSources ( calibrate_ch.collect(), mset_sourcedb_solutions_and_clusters_ch, params.ddecal.ateams.subtract.parset, params.ddecal.ateams.incol, params.ddecal.ateams.outcol )
+
+        AOqualityCollect( true, subtract_ncp_ch, params.ddecal.ateams.outcol )
+
+    emit:
+
+        AOqualityCollect.out
+
+}
+
 
 
 workflow DD {

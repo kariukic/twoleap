@@ -18,6 +18,7 @@ DIcal
 BPcal
 // ApplyBeam
 // PreDD
+// AT
 DD
 PS
 */
@@ -171,6 +172,42 @@ workflow Average {
 
         Distribute.out
 }
+
+
+workflow Run_AT {
+
+    take:
+        ready
+
+    main:
+
+        stage_ch = channel.of ( 'AT' )
+
+        stage_params_ch = GetParams( stage_ch )
+
+        cal_ch = Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
+
+        nodesList = params.data.nodes?.split(',') as List
+        nodes_ch = channel.fromList( nodesList ).collect {it}
+
+        mses_ch = WriteDDMSlist( cal_ch, nodes_ch)
+
+        mses_sols_ch = ReadTxtLinesandAppend( mses_ch, params.out.logs, "dd_mses.txt", "/${params.ddecal.ateams.sols}" )
+
+        // sols_collect_ch = H5ParmCollect( true, mses_sols_ch.list_postfix_str, "dd_combined_solutions" )
+
+        AOqualityCombine( true, mses_sols_ch.list_str, "aoqstats_ateams" ) // sols_collect_ch.combined_sols at p1
+
+        // mses_and_imname_ch = mses_sols_ch.list_str.combine( channel.of( "dd_corrected" ) )
+
+        // WScleanImage ( aoq_comb_ch.qstats.collect(), mses_and_imname_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.pol_fit, params.ddecal.dd.outcol )
+
+    emit:
+
+        // WScleanImage.out.done
+        AOqualityCombine.out.qstats
+}
+
 
 
 workflow Run_DD {
