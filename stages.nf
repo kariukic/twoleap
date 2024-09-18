@@ -11,6 +11,7 @@ include {
     MakeDP3ClustersListFile;
     SubtractSources;
     WScleanImage;
+    Flag;
     readTxtIntoString;
 } from './processes.nf'
 
@@ -141,6 +142,8 @@ workflow ATEAMS {
 
         mset_ch = channel.fromPath( "${params.data.path}/${params.average.ditodd.msout}_T*.MS", glob: true, checkIfExists: true, type: 'dir' )
 
+        // flag_ch = Flag (mset_ch, params.ddecal.ateams.outcol)
+
         clip_ch = ClipData( mset_ch )
 
         calibrate_ch = DP3Calibrate( start_ch, clip_ch, params.ddecal.ateams.parset, params.ddecal.ateams.sourcedb, params.ddecal.ateams.sols, params.ddecal.ateams.incol, params.ddecal.ateams.solint )
@@ -156,7 +159,13 @@ workflow ATEAMS {
 
         subtract_ncp_ch = SubtractSources ( calibrate_ch.collect(), mset_sourcedb_solutions_and_clusters_ch, params.ddecal.ateams.subtract.parset, params.ddecal.ateams.incol, params.ddecal.ateams.outcol )
 
-        AOqualityCollect( true, subtract_ncp_ch, params.ddecal.ateams.outcol )
+        aoq_ch = AOqualityCollect( true, subtract_ncp_ch, params.ddecal.ateams.outcol )
+
+        im_names_ch =  mset_ch.collect { it.getSimpleName() + "_" + params.wsclean.imname }
+
+        mset_and_names_ch = mset_ch.merge( im_names_ch.flatten() )
+
+        WScleanImage ( aoq_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.pol_fit, params.ddecal.ateams.outcol )
 
     emit:
 
@@ -207,13 +216,13 @@ workflow WS {
         start_ch
 
     main:
-        mset_ch = channel.fromPath( "${params.data.path}/${params.average.ditodd.msout}_T*.MS", glob: true, checkIfExists: true, type: 'dir' )
+        mset_ch = channel.fromPath( "${params.data.path}/${params.average.ditodd.msout}_T*flagged.MS", glob: true, checkIfExists: true, type: 'dir' )
         // mset_ch = channel.fromPath( "${params.data.path}/${params.split.msout}_T*.MS", glob: true, checkIfExists: true, type: 'dir' )
 
-        im_names_ch =  mset_ch.collect { it.getSimpleName() + "_dd_corrected_wide" }
+        im_names_ch =  mset_ch.collect { it.getSimpleName() + "_" + params.wsclean.imname }
 
         mset_and_names_ch = mset_ch.merge( im_names_ch.flatten() )
 
-        WScleanImage ( start_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.pol_fit, params.ddecal.dd.outcol )  // params.ddecal.di.beam.outcol ) //
+        WScleanImage ( start_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.pol_fit, params.wsclean.column )  //params.ddecal.di.beam.outcol ) // params.ddecal.dd.outcol
 
 }

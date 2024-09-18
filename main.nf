@@ -1,8 +1,6 @@
 #!/usr/bin/env nextflow
 
 include {
-    readTxtIntoString;
-    readTxtAndAppendString;
     H5ParmCollect;
     AOqualityCombine;
     WScleanImage;
@@ -10,7 +8,13 @@ include {
     ReadTxtLinesandAppend;
     AverageDItoDDMS;
     WriteDDMSlist;
+    writeHosts;
+    parseNodes;
+    makeDirectory;
+    readTxtIntoString;
+    readTxtAndAppendString;
 } from "./processes.nf"
+
 
 /*
 steps to run
@@ -31,8 +35,21 @@ workflow {
     Run_WS( dd_ch )
 }
 
+
+workflow TwoStep {
+    bp_ch = Run_BP( true )
+    split_ch = Split( bp_ch )
+    di_ch = Run_DI ( split_ch )
+    avg_ch = Average ( di_ch )
+    at_ch = Run_AT( avg_ch )
+    dd_ch = Run_DD ( at_ch )
+    Run_WS( dd_ch )
+
+}
+
+
 import groovy.json.JsonOutput
-process GetParams {
+process InitParams {
     debug true
     publishDir params.out.logs, mode: 'copy'
 
@@ -44,6 +61,10 @@ process GetParams {
         val true, emit: params_standby
 
     script:
+        makeDirectory( params.out.logs ) 
+        nodes_list  = parseNodes( params.data.nodes )
+        writeHosts( nodes_list, params.data.hosts )
+
         """
         echo '${JsonOutput.prettyPrint(JsonOutput.toJson(params))}' > ${stage}_params.json
         """
@@ -64,7 +85,7 @@ process Distribute {
 
     script:
         """
-        pssh -v -i -h ${params.data.hosts} -t 0 -x "cd ${params.data.path}; bash" nextflow run ${params.stagelib} --stage ${entry} --ch_in ${ch_in} -params-file ${params_file} > ${params.out.logs}/${entry}.log 2>&1
+        pssh -v -i -h ${launchDir}/${params.data.hosts} -t 0 -x "cd ${params.data.path}; bash" nextflow run ${params.stagelib} --stage ${entry} --ch_in ${ch_in} -params-file ${params_file} > ${params.out.logs}/${entry}.log 2>&1
         """
 }
 
@@ -79,7 +100,7 @@ workflow Run_BP {
 
         stage_ch = channel.of ( 'BP' )
 
-        stage_params_ch = GetParams( stage_ch )
+        stage_params_ch = InitParams( stage_ch )
 
         cal_ch = Distribute ( stage_params_ch.params_standby, stage_ready, stage_ch, stage_params_ch.params_file )
 
@@ -134,7 +155,7 @@ workflow Run_DI {
 
         stage_ch = channel.of ( 'DI' )
 
-        stage_params_ch = GetParams( stage_ch )
+        stage_params_ch = InitParams( stage_ch )
 
         cal_ch = Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
 
@@ -164,7 +185,7 @@ workflow Average {
     main:
         stage_ch = channel.of ( 'AVG' )
 
-        stage_params_ch = GetParams( stage_ch )
+        stage_params_ch = InitParams( stage_ch )
 
         Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
 
@@ -183,7 +204,7 @@ workflow Run_AT {
 
         stage_ch = channel.of ( 'AT' )
 
-        stage_params_ch = GetParams( stage_ch )
+        stage_params_ch = InitParams( stage_ch )
 
         cal_ch = Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
 
@@ -219,7 +240,7 @@ workflow Run_DD {
 
         stage_ch = channel.of ( 'DD' )
 
-        stage_params_ch = GetParams( stage_ch )
+        stage_params_ch = InitParams( stage_ch )
 
         cal_ch = Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
 
@@ -255,7 +276,7 @@ workflow Run_WS {
 
         stage_ch = channel.of ( 'WS' )
 
-        stage_params_ch = GetParams( stage_ch )
+        stage_params_ch = InitParams( stage_ch )
 
         cal_ch = Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
 

@@ -312,6 +312,30 @@ process ReadTxtLinesandAppend {
 }
 
 
+process Flag {
+
+    debug true
+    label 'sing'
+    publishDir "${params.data.path}", mode: 'move'
+
+    input:
+        path ms
+        val column
+
+    output:
+        path "${ms.getSimpleName()}_flagged.MS"
+    
+
+    script:
+        time=getTime()
+        """
+        DP3 steps=[aoflag,interpolate] msin=${ms} msin.datacolumn=${column} aoflag.type=aoflagger aoflag.memoryperc=20 "msout=${ms.getSimpleName()}_flagged.MS" > "${ms}/flag_${column}_${time}.log" 2>&1
+        """
+} 
+
+
+
+
 process AverageDItoDDMS {
     label 'sing'
     publishDir "${params.data.path}", mode: 'move'
@@ -353,7 +377,25 @@ process MakeClusters {
         """
 }
 
+ClipGains {
 
+    input:
+        path solsfile
+        val nsigma
+        val mode
+    
+    output:
+        val true
+
+        script:
+    """
+#!/usr/bin/python3
+from losoto.h5parm import h5parm
+H = h5parm('file.h5', readonly=False)
+soltab = H.getSolset('solset000').getSoltab('soltab000')
+    """
+
+}
 
 def readTxtIntoString (txt) {
     List tlist = file(txt).readLines()
@@ -367,4 +409,55 @@ def readTxtAndAppendString (txt, str) {
     String tstring = tlist.collect {"${it}" + str}.join(" ")
 
     return tstring
+}
+
+/*
+pssh needs a file listing the nodes to run commands on
+This command makes sucha a file given a nodeslist and a file path.
+input:      list of strings e.g. ["node100", "node101"]
+            file name string e.g "hosts_list.txt"
+output:     The written file
+*/
+def writeHosts ( nodes_list, hosts ) {
+    hosts = new File( hosts)
+    if (hosts.exists()){
+        hosts.delete()
+    }
+    hosts.createNewFile()
+    hosts.withWriter { out ->
+    nodes_list.each {
+      out.println("${it}")
+    }
+  }
+}
+
+
+/*
+return a list of the nodes with the 'node' prefix given an input string e.g. [node129]
+also assign the master node and number of processes if not provided.
+*/
+def parseNodes ( nodes ) {
+    // log.info """[nextleap*] init > verifying nodes list"""
+
+    if (nodes instanceof String){
+        nodes_list = nodes.split(',').collect{"node${it}"} as List
+    }
+    // when a single node is given..
+    else if (nodes instanceof Integer) {
+        nodes_list = nodes.collect{"node${it}"} as List
+    }
+    else {
+        log.error("Error: The `data.nodes` parameter is not valid. Got `--data.nodes=${nodes}`")
+        exit 0
+    }
+
+    return nodes_list
+}
+
+
+def makeDirectory ( fileName ) {
+    def file = new File(fileName)
+    if(!file.exists()) {
+        file.mkdir()
+    }
 }
