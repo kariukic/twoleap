@@ -329,11 +329,28 @@ process Flag {
     script:
         time=getTime()
         """
-        DP3 steps=[aoflag,interpolate] msin=${ms} msin.datacolumn=${column} aoflag.type=aoflagger aoflag.memoryperc=20 "msout=${ms.getSimpleName()}_flagged.MS" > "${ms}/flag_${column}_${time}.log" 2>&1
+        DP3 steps=[aoflag,interpolate] msin=${ms} msin.datacolumn=${column} aoflag.type=aoflagger aoflag.memoryperc=20 msout="${ms.getSimpleName()}_flagged.MS" > "${ms}/flag_${column}_${time}.log" 2>&1
         """
 } 
 
 
+process Compress {
+    debug true
+    label 'sing'
+    publishDir "${params.data.path}", mode: 'link'
+
+    input:
+        path ms
+
+    output:
+        path "${ms.getSimpleName()}DC.MS"
+
+    script:
+        time=getTime()
+        """
+        DP3 steps=[aoflag,interpolate] msin=${ms} msin.datacolumn=DATA aoflag.type=aoflagger aoflag.memoryperc=20 msout="${ms.getSimpleName()}DC.MS" msout.storagemanager=dysco  > "${ms}/compress_after_flagging_${column}_col_${time}.log" 2>&1
+        """
+}
 
 
 process AverageDItoDDMS {
@@ -353,11 +370,34 @@ process AverageDItoDDMS {
         val true , emit: done_averaging
 
     shell:
-    '''
-    ms003=$(echo "!{ms002}" | sed "s/002/003/")
-    DP3 steps=[avg] msin=!{ms002} msin.datacolumn="!{data_column}" msout=${ms003} avg.type=average avg.timestep=!{timestep} avg.freqstep=!{freqstep}
-    '''
+        '''
+        ms003=$(echo "!{ms002}" | sed "s/002/003/")
+        DP3 steps=[avg] msin=!{ms002} msin.datacolumn=!{data_column} msout=${ms003} avg.type=average avg.timestep=!{timestep} avg.freqstep=!{freqstep}
+        '''
 }
+
+
+process Average {
+    label 'sing'
+    publishDir "${params.data.path}", mode: 'move'
+
+    input:
+        val ready
+        tuple path(msin), val(msout)
+        val data_column
+        val timestep
+        val freqstep
+
+
+    output:
+        val true , emit: done_averaging
+
+    script:
+        """
+        DP3 steps=[avg] msin=${msin} msin.datacolumn=${data_column} msout=${msout} avg.type=average avg.timestep=${timestep} avg.freqstep=${freqstep}
+        """
+}
+
 
 
 process MakeClusters {

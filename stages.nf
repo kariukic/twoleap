@@ -56,6 +56,29 @@ workflow {
 
 }
 
+//FlagCompressBackupAverage
+workflow FCA {
+
+    take:
+        start_ch
+
+    main:
+
+        mset_ch = channel.fromPath( params.data.ms, glob: true, checkIfExists: true, type: 'dir' )
+
+        compress_ch = DyscoCompress( mset_ch )
+
+        all_averaged_msnames_ch =  mset_ch.collect { it.replace( "001", "002" ) }
+
+        avergae_ch = Average ( compress_ch.collect(), all_averaged_msnames_ch, params.average.lta_to_di.column, params.average.lta_to_di.timestep, params.average.lta_to_di.freqstep )
+
+        // BackUP ( )
+
+    emit:
+        Average.out
+
+}
+
 
 workflow BP {
 
@@ -67,9 +90,9 @@ workflow BP {
         // String mspattern= params.ms.split(',').collect{"${it}"}.join("*")
         mset_ch = channel.fromPath( params.data.ms, glob: true, checkIfExists: true, type: 'dir' )
 
-        // scale_data_ch = ScaleData( mset_ch )
+        scale_ch = ScaleData( mset_ch )
 
-        clip_ch = ClipData( mset_ch ) //scale_data_ch 
+        clip_ch = ClipData( scale_ch )
 
         sols_ch = DP3Calibrate( true, clip_ch, params.ddecal.bp.parset, params.ddecal.bp.sourcedb, params.ddecal.bp.sols, params.ddecal.bp.incol, params.ddecal.bp.solint ) // at postion 2
 
