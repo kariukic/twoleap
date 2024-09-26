@@ -6,7 +6,7 @@ include {
     WScleanImage;
     ConcatFrequencySplitTime;
     ReadTxtLinesandAppend;
-    AverageDItoDDMS;
+    WriteMSlist;
     WriteDDMSlist;
     writeHosts;
     parseNodes;
@@ -27,14 +27,14 @@ DD
 PS
 */
 workflow {
-    bp_ch = Run_BP( true )
+    fcab_ch = FCAB ( true )
+    bp_ch = Run_BP( fcab_ch )
     split_ch = Split( bp_ch )
     di_ch = Run_DI ( split_ch )
     avg_ch = Average ( di_ch )
     dd_ch = Run_DD ( avg_ch )
-    Run_WS( dd_ch )
 }
-
+    // Run_WS( dd_ch )
 
 workflow TwoStep {
     bp_ch = Run_BP( true )
@@ -44,8 +44,13 @@ workflow TwoStep {
     at_ch = Run_AT( avg_ch )
     dd_ch = Run_DD ( at_ch )
     Run_WS( dd_ch )
-
 }
+
+
+workflow ExtractDATA {
+    ext_ch = EXTRACT( true )
+}
+
 
 
 import groovy.json.JsonOutput
@@ -63,7 +68,7 @@ process InitParams {
     script:
         makeDirectory( params.out.logs ) 
         nodes_list  = parseNodes( params.data.nodes )
-        writeHosts( nodes_list, params.data.hosts )
+        writeHosts ( nodes_list, params.data.hosts )
 
         """
         echo '${JsonOutput.prettyPrint(JsonOutput.toJson(params))}' > ${stage}_params.json
@@ -90,6 +95,35 @@ process Distribute {
 }
 
 
+workflow FCAB {
+
+    take:
+        ready
+
+    main:
+        stage_ch = channel.of ( 'FCAB' )
+
+        stage_params_ch = InitParams( stage_ch )
+
+        cal_ch = Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
+
+        // nodesList = params.data.nodes?.split(',') as List
+        // nodes_ch = channel.fromList( nodesList ).collect {it}    
+        // mslist_ch = WriteMSlist( cal_ch, nodes_ch, params.data.ms_files.raw, params.data.raw_mslist )
+        // output_mslist = file(params.out.logs).resolve( params.data.raw_mslist )
+
+        mses = readTxtIntoString ( params.data.raw_mslist )
+
+        AOqualityCombine( cal_ch, mses, "aoqstats_raw" )
+
+    emit:
+
+        AOqualityCombine.out.qstats
+
+}
+
+
+
 workflow Run_BP {
 
     take:
@@ -104,9 +138,9 @@ workflow Run_BP {
 
         cal_ch = Distribute ( stage_params_ch.params_standby, stage_ready, stage_ch, stage_params_ch.params_file )
 
-        mses = readTxtIntoString ( params.data.mslist )
+        mses = readTxtIntoString ( params.data.bp_mslist )
 
-        solution_files = readTxtAndAppendString( params.data.mslist, "/${params.ddecal.bp.sols}" )
+        solution_files = readTxtAndAppendString( params.data.bp_mslist, "/${params.ddecal.bp.sols}" )
 
         // sols_collect_ch = H5ParmCollect( cal_ch, solution_files, "bp_combined_solutions" )
 
@@ -114,7 +148,7 @@ workflow Run_BP {
 
         mses_and_imname_ch = channel.of ( mses ).combine( channel.of ( "bp_corrected" ) )
 
-        WScleanImage ( aoq_comb_ch.qstats.collect(), mses_and_imname_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.pol_fit, params.ddecal.bp.outcol )
+        WScleanImage ( aoq_comb_ch.qstats.collect(), mses_and_imname_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, params.wsclean.chansout, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit, params.ddecal.bp.outcol )
 
     emit:
 
@@ -129,14 +163,14 @@ workflow Split {
         ready
     
     main:
-        mses = readTxtIntoString ( params.data.mslist )
+        mses = readTxtIntoString ( params.data.bp_mslist )
 
         nodesList = params.data.nodes?.split(',') as List
         nodes_ch = channel.fromList( nodesList ).collect {it}
 
-        output_mslist = file(params.out.logs).resolve( "di_mses.txt" )
+        output_mslist = file(params.out.logs).resolve( params.data.di_mslist )
 
-        ConcatFrequencySplitTime ( ready, mses, nodes_ch, params.split.ntimes, params.ddecal.bp.outcol, params.split.msout, output_mslist, params.split.mses_per_node )
+        ConcatFrequencySplitTime ( ready, mses, nodes_ch, params.split.ntimes, params.ddecal.bp.outcol, params.split.ms_prefix, params.split.mses_per_node, output_mslist )
         
     emit:
 
@@ -159,7 +193,7 @@ workflow Run_DI {
 
         cal_ch = Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
 
-        mses_sols_ch = ReadTxtLinesandAppend( cal_ch, params.out.logs, "di_mses.txt", "/${params.ddecal.di.sols}" )
+        mses_sols_ch = ReadTxtLinesandAppend( cal_ch, params.out.logs, params.data.di_mslist, "/${params.ddecal.di.sols}" )
 
         // sols_collect_ch = H5ParmCollect( true, mses_sols_ch.list_postfix_str, "di_combined_solutions" )
 
@@ -167,7 +201,7 @@ workflow Run_DI {
 
         mses_and_imname_ch = mses_sols_ch.list_str.combine( channel.of( "di_beam_corrected" ) )
 
-        WScleanImage ( aoq_comb_ch.qstats.collect(), mses_and_imname_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.pol_fit, params.ddecal.di.beam.outcol )
+        WScleanImage ( aoq_comb_ch.qstats.collect(), mses_and_imname_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, params.wsclean.chansout, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit, params.ddecal.di.beam.outcol )
 
     emit:
 
@@ -213,7 +247,7 @@ workflow Run_AT {
 
         mses_ch = WriteDDMSlist( cal_ch, nodes_ch)
 
-        mses_sols_ch = ReadTxtLinesandAppend( mses_ch, params.out.logs, "dd_mses.txt", "/${params.ddecal.ateams.sols}" )
+        mses_sols_ch = ReadTxtLinesandAppend( mses_ch, params.out.logs, params.data.dd_mslist, "/${params.ddecal.ateams.sols}" )
 
         // sols_collect_ch = H5ParmCollect( true, mses_sols_ch.list_postfix_str, "dd_combined_solutions" )
 
@@ -221,14 +255,13 @@ workflow Run_AT {
 
         // mses_and_imname_ch = mses_sols_ch.list_str.combine( channel.of( "dd_corrected" ) )
 
-        // WScleanImage ( aoq_comb_ch.qstats.collect(), mses_and_imname_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.pol_fit, params.ddecal.dd.outcol )
+        // WScleanImage ( aoq_comb_ch.qstats.collect(), mses_and_imname_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.polfit, params.ddecal.dd.outcol )
 
     emit:
 
         // WScleanImage.out.done
         AOqualityCombine.out.qstats
 }
-
 
 
 workflow Run_DD {
@@ -249,7 +282,7 @@ workflow Run_DD {
 
         mses_ch = WriteDDMSlist( cal_ch, nodes_ch)
 
-        mses_sols_ch = ReadTxtLinesandAppend( mses_ch, params.out.logs, "dd_mses.txt", "/${params.ddecal.dd.sols}" )
+        mses_sols_ch = ReadTxtLinesandAppend( mses_ch, params.out.logs, params.data.dd_mslist, "/${params.ddecal.dd.sols}" )
 
         // sols_collect_ch = H5ParmCollect( true, mses_sols_ch.list_postfix_str, "dd_combined_solutions" )
 
@@ -257,7 +290,7 @@ workflow Run_DD {
 
         // mses_and_imname_ch = mses_sols_ch.list_str.combine( channel.of( "dd_corrected" ) )
 
-        // WScleanImage ( aoq_comb_ch.qstats.collect(), mses_and_imname_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.pol_fit, params.ddecal.dd.outcol )
+        // WScleanImage ( aoq_comb_ch.qstats.collect(), mses_and_imname_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, params.wsclean.chansout, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit, params.ddecal.dd.outcol )
 
     emit:
 
@@ -268,13 +301,27 @@ workflow Run_DD {
 
 workflow Run_WS {
 
-
     take:
         ready
 
     main:
 
         stage_ch = channel.of ( 'WS' )
+
+        stage_params_ch = InitParams( stage_ch )
+
+        cal_ch = Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
+
+}
+
+workflow EXTRACT {
+
+    take:
+        ready
+
+    main:
+
+        stage_ch = channel.of ( 'TAR' )
 
         stage_params_ch = InitParams( stage_ch )
 

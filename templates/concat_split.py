@@ -88,7 +88,7 @@ parser.add_argument(
     "-q",
     "--nchunks",
     type=int,
-    help="number of chunks to output instead of all possible ones based on ntims",
+    help="number of chunks to output instead of all possible ones based on ntimes",
     required=False,
 )
 
@@ -318,10 +318,11 @@ def concatSubbands(
     else:
         starttimeslots = [0]
 
-    logging.debug(f"starttimeslot: {starttimeslots}")
-    logging.info(f"total output MSes: {len(starttimeslots)}")
+    logging.debug(f"Starting timeslot per MS: {starttimeslots}")
+    logging.info(f"Total output MSes: {len(starttimeslots)}")
 
     if nodes:
+        logging.info(f"Data distribution nodes: {nodes}")
         ntimes = int(ntimes)
         starttimeslots = [int(s) for s in starttimeslots]
         all_msout_names = distribute(
@@ -343,6 +344,7 @@ def concatSubbands(
                 for outms in all_msout_names:
                     f.write(f"{outms}\n")
             logging.info(f"wrote the list of mses to: {output_ms_list_file}")
+
 
 if __name__ == "__main__":
     args = parser.parse_args()

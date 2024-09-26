@@ -7,6 +7,7 @@ include {
 
 process ScaleData {
     debug true
+    label 'sing'
 
     input:
     path ms
@@ -17,7 +18,7 @@ process ScaleData {
     script:
         time = getTime()
         """
-        python3 /home/codex/chege/software/pipelines/nextleap/scaledata.py -i ${ms} -f 0 > "${ms}/scale_${time}.log" 2>&1
+        python3 /home/codex/chege/software/pipelines/nextleap/templates/scaledata.py -i ${ms} -f 0 > "${ms}/scale_${time}.log" 2>&1
         """
 }
 
@@ -39,11 +40,31 @@ process ClipData {
         """
 }
 
+process UnpackMSTarball {
+    debug true
+    label 'sing'
+    publishDir "${params.data.path}", mode: 'move'
+
+    input:
+        path ms
+        val mslabel
+
+    output:
+        path "${ms.getSimpleName()}_${mslabel}.MS"
+        
+
+    script:
+        time = getTime()
+        """
+        python3 ${projectDir}/templates/untarLTAData.py -i ${ms} -l ${mslabel}  > "extract_${ms}_${time}.log" 2>&1
+        """
+}
+
 
 process DP3Calibrate {
     debug true
     label 'sing'
-    maxForks 1
+    maxForks 5
     publishDir "${ms}" , mode: 'copy'
 
     input:
@@ -136,27 +157,33 @@ process MakeDP3ClustersListFile {
 
 process WScleanImage {
     label 'sing'
-    publishDir "${params.data.path}/${params.out.results}/images", pattern: "*.fits", mode: "move", overwrite: true
+    publishDir "${params.data.path}/${params.out.results}/wsclean/${datacol}", pattern: "*.fits", mode: "move", overwrite: true
     // publishDir "${params.data.path}/${params.out.results}/images", pattern: "*.txt", mode: "copy", overwrite: true
 
     input:
         val ready
-        tuple val(mses), val(image_name)
+        tuple val(mses), val(imname)
         val size
         val scale
-        val spectral_pol_fit
-        val data_column
+        val niter
+        val pol
+        val chansout
+        val minuvl
+        val maxuvl
+        val weight
+        val polfit
+        val datacol
         
 
     output:
         path "*.fits"
         val true , emit: done
-        // path "${image_name}-sources.txt", emit: model
+        // path "${imname}-sources.txt", emit: model
 
-    shell:
-        '''
-        wsclean -name !{image_name} -data-column !{data_column} -pol IV -weight briggs -0.1  -minuv-l 50 -maxuv-l 300 -scale !{scale} -size !{size} !{size} -make-psf -niter 0 -join-channels -channels-out 69 -gridder wgridder -wgridder-accuracy 1e-5 -reorder -no-mf-weighting !{mses} > !{params.out.logs}/!{image_name}_wsclean_image.log
-        '''
+    script:
+        """
+        wsclean -name ${imname} -data-column ${datacol} -pol ${pol} -weight ${weight}  -minuv-l ${minuvl} -maxuv-l ${maxuvl} -scale ${scale} -size ${size} ${size} -make-psf -niter ${niter} -join-channels -channels-out ${chansout} -gridder wgridder -wgridder-accuracy 1e-5 -reorder -no-mf-weighting ${mses} > ${params.out.logs}/wsclean_${imname}_image.log
+        """
 }
 
 // -save-source-list -fit-spectral-pol !{spectral_pol_fit} -multiscale -no-update-model-required -auto-mask 3 -auto-threshold 1 -mgain 0.6 -local-rms
@@ -193,7 +220,7 @@ process AOqualityCombine {
     shell:
         '''
         mkdir -p !{params.data.path}/!{params.out.results}/aoquality
-        aoquality combine !{params.data.path}/!{params.out.results}/aoquality/!{output_name}.qs !{mses} > !{params.out.logs}/aoquality_combine.log
+        aoquality combine !{params.data.path}/!{params.out.results}/aoquality/!{output_name}.qs !{mses} > !{params.out.logs}/aoquality_combine_!{output_name}.log
         # python3 !{projectDir}/templates/plot_aoqstats.py -q !{params.data.path}/!{params.out.results}/aoquality/!{output_name}.qs -o !{params.data.path}/!{params.out.results}/aoquality/!{output_name}.png >> !{params.out.logs}/aoquality_combine.log
         '''
 }
@@ -241,10 +268,37 @@ process ConcatFrequencySplitTime {
     shell:
         nd  = nodes.join(' ')
         """
-        python3 !{projectDir}/templates/concat_split.py --mslist !{msfiles} --msout !{msout} --ntimes !{ntimes} --nodes !{nd} --datapath !{params.data.path} --datacolumn !{column} --output_ms_list_file !{outtxt} --nmses_per_node !{mses_per_node} > ${params.out.logs}/freq_concat.log 2>&1
+        python3 !{projectDir}/templates/concat_split.py --mslist !{msfiles} --msout !{msout} --ntimes !{ntimes} --nodes !{nd} --datapath !{params.data.path} --datacolumn !{column} --output_ms_list_file !{outtxt} --nmses_per_node !{mses_per_node} > ${params.out.logs}/concat_freqs_split_time.log 2>&1
         """
 
 }
+
+process WriteMSlist {
+    publishDir params.out.logs, mode: "copy", overwrite: true
+
+    input:
+        val ready
+        val nodes
+        val glob_pattern
+        val txtname
+
+    output:
+        path "${txtname}"
+    
+    script:
+    """
+#!/usr/bin/python3
+from glob import glob
+mses=[]
+for node in ${nodes}:
+    mslist=glob(f"/net/node{node}/${glob_pattern}")
+    mses+=mslist
+with open("${txtname}", "w") as out:
+    for ms in mses:
+        out.write(f"{ms}\\n")
+    """
+}
+
 
 process WriteDDMSlist {
     input:
@@ -260,9 +314,9 @@ process WriteDDMSlist {
 from glob import glob
 mses=[]
 for node in ${nodes}:
-    mslist=glob(f"/net/node{node}/${params.data.path}/${params.average.ditodd.msout}_T*.MS")
+    mslist=glob(f"/net/node{node}/${params.data.ms_files.dd}")
     mses+=mslist
-with open("${params.out.logs}/dd_mses.txt", "w") as out:
+with open("${params.out.logs}/${params.data.dd_mslist}", "w") as out:
     for ms in mses:
         out.write(f"{ms}\\n")
     """
@@ -286,7 +340,7 @@ process ApplyBEAM {
         time = getTime()
 
         """
-        DP3 ${parset} msin=${ms} msin.datacolumn=${incol} msout.datacolumn=${outcol} > "${params.out.logs}/${ms}_apply_beam_${time}.log" 2>&1
+        DP3 ${parset} msin=${ms} msin.datacolumn=${incol} msout.datacolumn=${outcol} > "${ms}/apply_beam_${time}.log" 2>&1
         """
 }
 
@@ -337,49 +391,51 @@ process Flag {
 process Compress {
     debug true
     label 'sing'
-    publishDir "${params.data.path}", mode: 'link'
+    maxForks 5
+    publishDir "${params.data.path}", mode: 'move'
 
     input:
         path ms
 
     output:
-        path "${ms.getSimpleName()}DC.MS"
+        // path "${ms.getSimpleName()}_DC.MS"
+        path "${ms.getName().replace(".MS", ".DCMS")}"
 
     script:
         time=getTime()
         """
-        DP3 steps=[aoflag,interpolate] msin=${ms} msin.datacolumn=DATA aoflag.type=aoflagger aoflag.memoryperc=20 msout="${ms.getSimpleName()}DC.MS" msout.storagemanager=dysco  > "${ms}/compress_after_flagging_${column}_col_${time}.log" 2>&1
+        DP3 steps=[aoflag,interpolate] msin=${ms} msin.datacolumn=DATA aoflag.type=aoflagger aoflag.memoryperc=20 msout="${ms.getName().replace(".MS", ".DCMS")}" msout.storagemanager=dysco  > "${ms}/compress_after_flagging_col_${time}.log" 2>&1
         """
 }
 
 
-process AverageDItoDDMS {
-    label 'sing'
-    publishDir "${params.data.path}", mode: 'move'
+// process AverageDItoDDMS {
+//     label 'sing'
+//     publishDir "${params.data.path}", mode: 'move'
 
-    input:
-        val ready
-        path ms002
-        val data_column
-        val timestep
-        val freqstep
+//     input:
+//         val ready
+//         path ms002
+//         val data_column
+//         val timestep
+//         val freqstep
 
 
-    output:
-        path "*_SAP*_SB*_uv_003*.MS"
-        val true , emit: done_averaging
+//     output:
+//         path "*_SAP*_SB*_uv_003*.MS"
+//         val true , emit: done_averaging
 
-    shell:
-        '''
-        ms003=$(echo "!{ms002}" | sed "s/002/003/")
-        DP3 steps=[avg] msin=!{ms002} msin.datacolumn=!{data_column} msout=${ms003} avg.type=average avg.timestep=!{timestep} avg.freqstep=!{freqstep}
-        '''
-}
+//     shell:
+//         '''
+//         ms003=$(echo "!{ms002}" | sed "s/002/003/")
+//         DP3 steps=[avg] msin=!{ms002} msin.datacolumn=!{data_column} msout=${ms003} avg.type=average avg.timestep=!{timestep} avg.freqstep=!{freqstep}
+//         '''
+// }
 
 
 process Average {
     label 'sing'
-    publishDir "${params.data.path}", mode: 'move'
+    publishDir params.data.path, mode: 'move'
 
     input:
         val ready
@@ -390,6 +446,7 @@ process Average {
 
 
     output:
+        path "${msout}"
         val true , emit: done_averaging
 
     script:
@@ -397,7 +454,6 @@ process Average {
         DP3 steps=[avg] msin=${msin} msin.datacolumn=${data_column} msout=${msout} avg.type=average avg.timestep=${timestep} avg.freqstep=${freqstep}
         """
 }
-
 
 
 process MakeClusters {
@@ -417,25 +473,27 @@ process MakeClusters {
         """
 }
 
-ClipGains {
 
-    input:
-        path solsfile
-        val nsigma
-        val mode
+// process ClipGains {
+
+//     input:
+//         path solsfile
+//         val nsigma
+//         val mode
     
-    output:
-        val true
+//     output:
+//         val true
 
-        script:
-    """
-#!/usr/bin/python3
-from losoto.h5parm import h5parm
-H = h5parm('file.h5', readonly=False)
-soltab = H.getSolset('solset000').getSoltab('soltab000')
-    """
+//         script:
+//     """
+// #!/usr/bin/python3
+// from losoto.h5parm import h5parm
+// H = h5parm('file.h5', readonly=False)
+// soltab = H.getSolset('solset000').getSoltab('soltab000')
+//     """
 
-}
+// }
+
 
 def readTxtIntoString (txt) {
     List tlist = file(txt).readLines()
@@ -444,12 +502,15 @@ def readTxtIntoString (txt) {
     return tstring
 }
 
+
 def readTxtAndAppendString (txt, str) {
     List tlist = file(txt).readLines()
     String tstring = tlist.collect {"${it}" + str}.join(" ")
 
     return tstring
 }
+
+
 
 /*
 pssh needs a file listing the nodes to run commands on

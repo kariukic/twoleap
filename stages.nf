@@ -7,15 +7,29 @@ include {
     ApplyGains;
     AOqualityCollect;
     ApplyBEAM;
-    AverageDItoDDMS;
     MakeDP3ClustersListFile;
     SubtractSources;
     WScleanImage;
     Flag;
+    Compress;
+    Average;
+    UnpackMSTarball;
     readTxtIntoString;
 } from './processes.nf'
 
 workflow {
+
+    if ( params.stage == "TAR" ) {
+        
+        TAR ( params.ch_in )
+
+    }
+
+    if ( params.stage == "FCAB" ) {
+        
+        FCAB ( params.ch_in )
+
+    }
 
     if ( params.stage == "BP" ) {
         
@@ -41,7 +55,6 @@ workflow {
 
     }
 
-
     if ( params.stage == "DD" ) {
         
         DD ( params.ch_in )
@@ -56,26 +69,34 @@ workflow {
 
 }
 
+
 //FlagCompressBackupAverage
-workflow FCA {
+workflow FCAB {
 
     take:
         start_ch
 
     main:
 
-        mset_ch = channel.fromPath( params.data.ms, glob: true, checkIfExists: true, type: 'dir' )
+        mset_ch = channel.fromPath( params.data.ms_files.raw, glob: true, checkIfExists: true, type: 'dir' )
 
-        compress_ch = DyscoCompress( mset_ch )
+        compress_ch = Compress( mset_ch )
 
-        all_averaged_msnames_ch =  mset_ch.collect { it.replace( "001", "002" ) }
+        compressed_mset_ch = mset_ch.collect { "${params.data.path}/" + it.getName().replace( ".MS", ".DCMS" ) }
 
-        avergae_ch = Average ( compress_ch.collect(), all_averaged_msnames_ch, params.average.lta_to_di.column, params.average.lta_to_di.timestep, params.average.lta_to_di.freqstep )
+        averaged_msnames_ch = mset_ch.collect { it.getName().replace( "_001", "_002" ) }  // //"15ch2s", "1ch4s"
+        
+        all_msets_and_averaged_msnames_ch = compressed_mset_ch.flatten().merge( averaged_msnames_ch.flatten() )
 
+        avg_ch = Average ( compress_ch.collect(), all_msets_and_averaged_msnames_ch, params.average.lta_to_di.column, params.average.lta_to_di.timestep, params.average.lta_to_di.freqstep )
+
+        AOqualityCollect( avg_ch.done_averaging.collect(), mset_ch, params.average.lta_to_di.column )
+        
         // BackUP ( )
 
     emit:
-        Average.out
+
+        AOqualityCollect.out
 
 }
 
@@ -88,25 +109,32 @@ workflow BP {
     main:
 
         // String mspattern= params.ms.split(',').collect{"${it}"}.join("*")
-        mset_ch = channel.fromPath( params.data.ms, glob: true, checkIfExists: true, type: 'dir' )
+        mset_ch = channel.fromPath( params.data.ms_files.bp, glob: true, checkIfExists: true, type: 'dir' )
 
         scale_ch = ScaleData( mset_ch )
 
         clip_ch = ClipData( scale_ch )
 
-        sols_ch = DP3Calibrate( true, clip_ch, params.ddecal.bp.parset, params.ddecal.bp.sourcedb, params.ddecal.bp.sols, params.ddecal.bp.incol, params.ddecal.bp.solint ) // at postion 2
+        sols_ch = DP3Calibrate( true, clip_ch, params.ddecal.bp.parset, params.ddecal.bp.sourcedb, params.ddecal.bp.sols, params.ddecal.bp.incol, params.ddecal.bp.solint )
 
         all_solutions_ch =  mset_ch.collect { it + "/${params.ddecal.bp.sols}" }
 
         mset_and_solutions_ch = mset_ch.merge( all_solutions_ch.flatten() )
 
-        apply_gains_ch = ApplyGains ( sols_ch.collect(), mset_and_solutions_ch, params.ddecal.bp.apply.parset, params.ddecal.bp.incol, params.ddecal.bp.outcol ) //  at position 1
+        apply_gains_ch = ApplyGains ( sols_ch.collect(), mset_and_solutions_ch, params.ddecal.bp.apply.parset, params.ddecal.bp.incol, params.ddecal.bp.outcol )
 
-        AOqualityCollect( true, apply_gains_ch, params.ddecal.bp.outcol )
+        aoq_ch = AOqualityCollect( true, apply_gains_ch, params.ddecal.bp.outcol )
     
+        im_names_ch =  mset_ch.collect { it.getSimpleName() + "_" + params.wsclean.imname }
+
+        mset_and_names_ch = mset_ch.merge( im_names_ch.flatten() )
+
+        WScleanImage ( aoq_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, 3, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit,  params.ddecal.bp.outcol )
+
     emit:
 
-        AOqualityCollect.out
+        WScleanImage.out.done
+
 
 }
 
@@ -118,7 +146,8 @@ workflow DI {
 
     main:
 
-        mset_ch = channel.fromPath( "${params.data.path}/${params.split.msout}_T*.MS", glob: true, checkIfExists: true, type: 'dir' )
+        // mset_ch = channel.fromPath( "${params.data.path}/${params.split.ms_prefix}_T*.MS", glob: true, checkIfExists: true, type: 'dir' )
+        mset_ch = channel.fromPath( params.data.ms_files.di, glob: true, checkIfExists: true, type: 'dir' )
 
         sols_ch = DP3Calibrate( start_ch, mset_ch, params.ddecal.di.parset, params.ddecal.di.sourcedb, params.ddecal.di.sols, params.ddecal.di.incol, params.ddecal.di.solint )
 
@@ -130,11 +159,17 @@ workflow DI {
 
         apply_elbeam_ch = ApplyBEAM(true, apply_gains_ch, params.ddecal.di.beam.parset, params.ddecal.di.outcol, params.ddecal.di.beam.outcol )
 
-        AOqualityCollect( true, apply_elbeam_ch, params.ddecal.di.beam.outcol )
+        aoq_ch = AOqualityCollect( true, apply_elbeam_ch, params.ddecal.di.beam.outcol )
     
+        im_names_ch =  mset_ch.collect { it.getSimpleName() + "_" + params.wsclean.imname }
+
+        mset_and_names_ch = mset_ch.merge( im_names_ch.flatten() )
+
+        WScleanImage ( aoq_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, 3, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit,  params.ddecal.di.beam.outcol )
+
     emit:
 
-        AOqualityCollect.out
+        WScleanImage.out.done
 
 }
 
@@ -146,13 +181,18 @@ workflow AVG {
 
     main:
 
-        mset_ch = channel.fromPath( "${params.data.path}/${params.split.msout}_T*.MS", glob: true, checkIfExists: true, type: 'dir' )
+        // mset_ch = channel.fromPath( "${params.data.path}/${params.split.ms_prefix}_T*.MS", glob: true, checkIfExists: true, type: 'dir' )
+        mset_ch = channel.fromPath( params.data.ms_files.di, glob: true, checkIfExists: true, type: 'dir' )
 
-        AverageDItoDDMS ( start_ch, mset_ch, params.ddecal.di.beam.outcol, params.average.ditodd.timestep, params.average.ditodd.freqstep )
+        averaged_msnames_ch = mset_ch.collect { it.getName().replace( "_002", "_003" ) }
+        
+        all_msets_and_averaged_msnames_ch = mset_ch.flatten().merge( averaged_msnames_ch.flatten() )
+
+        Average ( true, all_msets_and_averaged_msnames_ch, params.ddecal.di.beam.outcol, params.average.ditodd.timestep, params.average.ditodd.freqstep )
 
     emit:
 
-        AverageDItoDDMS.out.done_averaging
+        Average.out.done_averaging
 
 }
 
@@ -163,7 +203,8 @@ workflow ATEAMS {
 
     main:
 
-        mset_ch = channel.fromPath( "${params.data.path}/${params.average.ditodd.msout}_T*.MS", glob: true, checkIfExists: true, type: 'dir' )
+        // mset_ch = channel.fromPath( "${params.data.path}/${params.average.ditodd.msout}_T*.MS", glob: true, checkIfExists: true, type: 'dir' )
+        mset_ch = channel.fromPath( params.data.ms_files.dd, glob: true, checkIfExists: true, type: 'dir' )
 
         // flag_ch = Flag (mset_ch, params.ddecal.ateams.outcol)
 
@@ -188,11 +229,11 @@ workflow ATEAMS {
 
         mset_and_names_ch = mset_ch.merge( im_names_ch.flatten() )
 
-        WScleanImage ( aoq_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.pol_fit, params.ddecal.ateams.outcol )
+        WScleanImage ( aoq_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, 3, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit,  params.ddecal.ateams.outcol )
 
     emit:
 
-        AOqualityCollect.out
+        WScleanImage.out.done
 
 }
 
@@ -204,7 +245,8 @@ workflow DD {
 
     main:
 
-        mset_ch = channel.fromPath( "${params.data.path}/${params.average.ditodd.msout}_T*.MS", glob: true, checkIfExists: true, type: 'dir' )
+        // mset_ch = channel.fromPath( "${params.data.path}/${params.average.ditodd.msout}_T*.MS", glob: true, checkIfExists: true, type: 'dir' )
+        mset_ch = channel.fromPath( params.data.ms_files.dd, glob: true, checkIfExists: true, type: 'dir' )
 
         // cluster_ch = MakeClusters( source_select_ch, params.number_of_clusters, "l3_ncp_clusters.ao" )
         // OR
@@ -225,11 +267,17 @@ workflow DD {
 
         subtract_ncp_ch = SubtractSources ( calibrate_ch.collect(), mset_sourcedb_solutions_and_clusters_ch, params.ddecal.dd.subtract.parset, params.ddecal.dd.incol, params.ddecal.dd.outcol )
 
-        AOqualityCollect( true, subtract_ncp_ch, params.ddecal.dd.outcol )
+        aoq_ch = AOqualityCollect( true, subtract_ncp_ch, params.ddecal.dd.outcol )
+
+        im_names_ch =  mset_ch.collect { it.getSimpleName() + "_" + params.wsclean.imname }
+
+        mset_and_names_ch = mset_ch.merge( im_names_ch.flatten() )
+
+        WScleanImage ( aoq_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, 3, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit,  params.ddecal.dd.outcol )
 
     emit:
 
-        AOqualityCollect.out
+        WScleanImage.out.done
 
 }
 
@@ -240,12 +288,24 @@ workflow WS {
 
     main:
         mset_ch = channel.fromPath( "${params.data.path}/${params.average.ditodd.msout}_T*flagged.MS", glob: true, checkIfExists: true, type: 'dir' )
-        // mset_ch = channel.fromPath( "${params.data.path}/${params.split.msout}_T*.MS", glob: true, checkIfExists: true, type: 'dir' )
+        // mset_ch = channel.fromPath( "${params.data.path}/${params.split.ms_prefix}_T*.MS", glob: true, checkIfExists: true, type: 'dir' )
 
         im_names_ch =  mset_ch.collect { it.getSimpleName() + "_" + params.wsclean.imname }
 
         mset_and_names_ch = mset_ch.merge( im_names_ch.flatten() )
 
-        WScleanImage ( start_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.pol_fit, params.wsclean.column )  //params.ddecal.di.beam.outcol ) // params.ddecal.dd.outcol
+        WScleanImage ( start_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, params.wsclean.chansout, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit, params.wsclean.column )  //params.ddecal.di.beam.outcol ) // params.ddecal.dd.outcol
+
+}
+
+
+workflow TAR {
+    take:
+        start_ch
+
+    main:
+        mset_ch = channel.fromPath( params.data.ms_files.raw, glob: true, checkIfExists: true, type: 'file' )
+
+        untar_ch = UnpackMSTarball( mset_ch, params.data.label )
 
 }
