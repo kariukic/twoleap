@@ -1,0 +1,43 @@
+# The covariance kernel used to represent the FG
+int_fg_kern = Matern52(1, 10-200)
+#fg_kern = RatQuad(1, 1-5, 0.1) + Matern32(1, 0.5-2-3)
+#fg_kern = Matern52(1, 1-5)
+fg_kern = Matern32(1, 0.5-2-20) 
+
+# Whatever to include or not the EoR kernel during the fitting
+include_eor = True
+# The covariance kernel used to represent the EoR
+eor_kern = Exponential(0.01, 0.1-0.2-1.5)
+#eor_kern = Exponential(0.01, Ga[0.7;0.1;0.75])
+#eor_kern = Matern52(1, 0.2-0.4-2) + Exponential(0.01, 0.2-0.5-1.2)
+#eor_kern = Matern52(1, 0.2-0.3-0.7) + Exponential(0.01, Ga[0.7;0.1;0.75])
+#eor_kern = RatQuad(1, 0.1-0.7, 0.1) + Exponential(0.01, Ga[0.7;0.1;0.75])
+#eor_kern = Matern52(1, 0.2-0.4-0.7)
+
+# Perform a first GPR run with a post PCA run then do a second GPR run
+# with this PCA component removed.
+first_run_pca_n = 0
+
+# Perform a polynomial fit before GPR
+pre_poly_fit_deg = 0
+pre_poly_fit_type = power_poly
+
+# Perform a PCA fit before GPR
+pre_pca_n = 0
+
+# Perform a PCA fit after GPR
+post_pca_n = 0
+
+# Remove the mean in frequency direction
+r_mean = False
+
+heteroscedastic = True
+fixed_noise = True
+fixed_noise_scale = 1
+use_simulated_noise = True
+noise_scale_search_maxiter = 10
+noise_scale_search_range = [0.8, 2]
+noise_scale_search_method = bounded
+num_restarts = 4
+
+verbose = True

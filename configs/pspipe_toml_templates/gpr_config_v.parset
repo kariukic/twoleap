@@ -1,0 +1,35 @@
+# The covariance kernel used to represent the FG
+#int_fg_kern = RBF(1, 2-20)
+#fg_kern = RatQuad(1, 1-10, 0.1)
+fg_kern = Matern32(1, 1-5)
+#fg_kern = Matern32(1, 1-5)
+
+# Whatever to include or not the EoR kernel during the fitting
+include_eor = False
+# The covariance kernel used to represent the EoR
+eor_kern = Exponential(0.05, 0.01-0.5-1.5)
+
+# Perform a first GPR run with a post PCA run then do a second GPR run
+# with this PCA component removed.
+first_run_pca_n = 0
+
+# Perform a polynomial fit before GPR
+pre_poly_fit_deg = 1
+pre_poly_fit_type = power_poly
+
+# Perform a PCA fit before GPR
+pre_pca_n = 0
+
+# Perform a PCA fit after GPR
+post_pca_n = 0
+
+# Remove the mean in frequency direction
+r_mean = False
+
+heteroscedastic = False
+fixed_noise = False
+num_restarts = 2
+
+verbose = True
+
+noise_scale_delta_l = 60

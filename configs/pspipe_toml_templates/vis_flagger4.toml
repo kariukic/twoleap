@@ -1,0 +1,25 @@
+[flag_freqs_band.band1]
+freqs_match = [156e6, 157.5e6]
+freqs_filter = [155.5e6, 158e6]
+n_sigma = 4
+stokes = 'I'
+
+[flag_freqs_band.band2]
+freqs_match = [147e6, 149e6]
+freqs_filter = [147e6, 149e6]
+n_sigma = 4
+stokes = 'I'
+
+[flag_delay_time_outliers]
+n_sigma = 5
+window_fct = 'boxcar'
+wedge_factor = 1
+hpass_filter = true
+
+[flag_delay_baseline_outliers]
+n_sigma = 4
+window_fct = 'boxcar'
+wedge_factor = 1.2
+max_threshold = 2.1
+min_threshold = 1.8
+hpass_filter = true

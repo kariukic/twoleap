@@ -1,0 +1,65 @@
+kern.uv_bins_du = 20
+kern.fg = ['fg_int', 'fg_mix']
+kern.eor = ['eor_vae']
+
+sampler_method = 'mcmc'
+
+mcmc.n_steps = 200
+mcmc.n_walkers = 100
+mcmc.n_burn = 100
+mcmc.move = 'kde'
+
+ultranest.nlive = 200
+
+[fg_int]
+type = 'MRBF'
+variance.prior = 'Fixed(1)'
+variance.log_scale = false
+lengthscale.prior = 'Fixed(30)'
+ls_alpha.prior = 'Fixed(0)'
+var_alpha.prior = 'Fixed(0)'
+
+[fg_mix]
+type = 'MMat32'
+wedge_parametrization = false
+#theta_rad.prior = 'Uniform(0, 1.57)'
+variance.prior = 'Log10Uniform(-2, -0.1)'
+variance.log_scale = true
+#lengthscale.prior = 'Fixed(1)'
+lengthscale.prior = 'Uniform(1, 6)'
+ls_alpha.prior = 'Uniform(0, 2)'
+var_alpha.prior = 'Fixed(0)'
+
+[fg_mix2]
+type = 'MMat32'
+wedge_parametrization = false
+#theta_rad.prior = 'Uniform(0, 1.57)'
+variance.prior = 'Log10Uniform(-2, -0.1)'
+variance.log_scale = true
+#lengthscale.prior = 'Fixed(1)'
+lengthscale.prior = 'Uniform(1, 6)'
+ls_alpha.prior = 'Uniform(0, 2)'
+var_alpha.prior = 'Fixed(0)'
+
+[eor_vae]
+type = 'VAEKernTorch'
+fitter_filename = '/home/codex/chege/software/pipelines/twoleap/configs/pspipe_toml_templates/vae_z9.1_n1000_21cmFast_8params_2latent_v3_pp_norm_log_pre_proc.pt'
+x1.prior = 'Uniform(-4, 4)'
+x2.prior = 'Uniform(-4, 4)'
+#x1.prior = 'Gaussian(-1, 2)'
+#x2.prior = 'Gaussian(-1, 2)'
+variance.prior = 'Log10Uniform(-5, -0.2)'
+variance.log_scale = true
+
+[eor_exp]
+type = 'MExponential'
+variance.prior = 'Log10Uniform(-5, -1)'
+variance.log_scale = true
+lengthscale.prior = 'Uniform(0.1, 0.8)'
+ls_alpha.prior = 'Uniform(0, 10)'
+var_alpha.prior = 'Fixed(0)'
+#var_alpha.prior = 'Uniform(-10, 0)'
+
+[kern.noise]
+alpha.prior = 'Uniform(0.9, 1.6)'
+#alpha.prior = 'Fixed(1)'

@@ -1,0 +1,66 @@
+kern.uv_bins_du = 20
+kern.uv_bins_n_uni = 12
+
+kern.fg = ['fg_int', 'fg_mix_theta']
+kern.eor = ['eor_ratquad', 'eor_vae']
+
+gp.use_uv_weight = true
+
+sampler_method = 'ultranest'
+
+mcmc.n_steps = 300
+mcmc.n_walkers = 150
+mcmc.n_burn = 200
+mcmc.move = 'kde'
+
+ultranest.nlive = 120
+
+[fg_int]
+type = 'MRBF'
+variance.prior = 'Log10Uniform(-0.2, 0.2)'
+variance.log_scale = true
+lengthscale.prior = 'Uniform(30, 60)'
+#lengthscale.prior = 'Fixed(50)'
+ls_alpha.prior = 'Fixed(0)'
+use_uv_ps = true
+
+[fg_mix_theta]
+type = 'MMat32'
+wedge_parametrization = true
+#uv_break = 40
+theta_rad.prior = 'Uniform(0.2, 0.3)'
+#delay_buffer_us.prior = 'Uniform(0, 0.02)'
+delay_buffer_us.prior = 'Fixed(0.01)'
+variance.prior = 'Log10Uniform(-1, -0.5)'
+variance.log_scale = true
+lengthscale.prior = 'Fixed(1)'
+ls_alpha.prior = 'Fixed(0)'
+use_uv_ps = true
+
+[eor_vae]
+type = 'VAEKernTorch'
+fitter_filename = '/home/codex/chege/software/pipelines/twoleap/configs/pspipe_toml_templates/vae_z9.1_n1000_21cmFast_8params_2latent_v3_pp_norm_log_pre_proc.pt'
+x1.prior = 'Uniform(-3, 3)'
+x2.prior = 'Uniform(-3, 3)'
+variance.prior = 'Log10Uniform(-6, -0.5)'
+variance.log_scale = true
+
+[eor_ratquad]
+type = 'MRBF'
+variance.prior = 'Log10Uniform(-3, -2)'
+variance.log_scale = true
+lengthscale.prior = 'Uniform(0.3, 0.5)'
+#power.prior = 'Uniform(0.1, 20)'
+ls_alpha.prior = 'Fixed(0)'
+var_alpha.prior = 'Fixed(0)'
+
+[kern.noise]
+alpha.prior = 'Uniform(1.4, 1.7)'
+#alpha.prior = 'Fixed(1.5877)'
+use_simulated_noise_cube = true
+use_sefd_freqs_estimate = true
+use_noise_std = true
+estimate_baseline_noise_from_stokes = 'V'
+estimate_baseline_noise_remove_n_pca = 5
+estimate_baseline_noise_from_channel_diff = true
+scale_baseline_noise = true

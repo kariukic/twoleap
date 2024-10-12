@@ -1,0 +1,79 @@
+default_settings = "/home/users/mertens/projects/NCP/ncp_np6_red2/default.toml"
+debug = true
+
+[ao_flag]
+data_col = "DATA"
+numthreads = 0
+memoryperc = 30
+aoflagger_strategy = ""
+
+[dp3]
+numthreads = 0
+dp3_file = "/home/users/mertens/projects/NCP/ncp_np6_red2/dp3_preflag_bad_baseline_min.parset"
+
+[apply_flag]
+filename = ""
+
+[delay_flagger]
+umin = 50
+umax = 400
+n_time_avg = 50
+n_times = 20
+n_sigma_i = 6
+n_sigma_v = 6
+
+[ml_gpr]
+plot_results = true
+use_v_dt_as_noise = false
+name = "eor_vae_2023_v10k_ultranest"
+config = "config/gpr_ml_config_2023_v10k_ultranest.toml"
+
+[vis_flagger]
+config_file = "config/vis_flagger4.toml"
+
+[worker]
+run_on_file_host = false
+run_on_file_host_pattern = ""
+
+[merge_ms]
+numthreads = 0
+memoryperc = 30
+aoflagger_strategy = "/home/users/mertens/projects/NCP/nights_np5_red1/lofar-sens2.lua"
+
+[ssins]
+apply_ssins = false
+
+[combine]
+use_v_as_dt = false
+obs_id_out_prefix = "_sel10_6_"
+
+[gpr]
+name = ""
+plot_results = true
+use_v_dt_as_noise = false
+
+[image]
+clean_niter = 0
+clean_auto_threshold = 5
+clean_mgain = 0.6
+clean_residual = true
+clean_spectra_fit_nterms = 4
+data_col = "DATA"
+channels_out = "every3"
+umin = 30
+size = "1024 1024"
+name = "np6_dd_corr_1c_uv30_8deg_preflag_min_visflagger4"
+
+[image.wsclean_args]
+parallel-gridding = 5
+
+[ml_gpr_inj]
+#x1 = [-2, -1, 0, 1, 2]
+#x2 = [-2, -1, 0, 1, 2]
+#x1 = [-0.571]
+#x2 = [0.0]
+#var_21_over_noise = [0.2]
+#var_21_over_noise = [0.5, 2.0]
+var_21_over_noise = [0.25]
+x1_x2_file = '/home/users/mertens/projects/NCP/nights_np5/notebooks/injection_test_latent_coordinates_z9.1.csv'
+#var_21_over_noise = []
