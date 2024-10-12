@@ -11,7 +11,7 @@ parser.add_argument(
     "-i",
     "--ms_tarballs",
     nargs="+",
-    help="Measurement sets or file with list of MS",
+    help="Measurement sets",
     dest="ms_tarballs",
     default="",
 )
@@ -35,7 +35,7 @@ def extract(tfile, msname):
 
 
 def all_are_files(ms_tarballs):
-    return all([os.path.isfile(tarfile) for tarfile in ms_tarballs])
+    return all([os.path.isfile(tfile) for tfile in ms_tarballs])
 
 
 def parse_tarballs(ms_list):

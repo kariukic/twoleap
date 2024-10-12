@@ -3,7 +3,8 @@
 include {
     ScaleData;
     ClipData;
-    DP3Calibrate;
+    DP3CalibrateDI;
+    DP3CalibrateDD;
     ApplyGains;
     AOqualityCollect;
     ApplyBEAM;
@@ -84,7 +85,7 @@ workflow FCAB {
 
         compressed_mset_ch = mset_ch.collect { "${params.data.path}/" + it.getName().replace( ".MS", ".DCMS" ) }
 
-        averaged_msnames_ch = mset_ch.collect { it.getName().replace( "_001", "_002" ) }  // //"15ch2s", "1ch4s"
+        averaged_msnames_ch = mset_ch.collect { it.getName().replace( "_001", "_002" ) } //"15ch2s", "1ch4s" ) } //TODO: replace thes numbers with label params
         
         all_msets_and_averaged_msnames_ch = compressed_mset_ch.flatten().merge( averaged_msnames_ch.flatten() )
 
@@ -115,7 +116,7 @@ workflow BP {
 
         clip_ch = ClipData( scale_ch )
 
-        sols_ch = DP3Calibrate( true, clip_ch, params.ddecal.bp.parset, params.ddecal.bp.sourcedb, params.ddecal.bp.sols, params.ddecal.bp.incol, params.ddecal.bp.solint )
+        sols_ch = DP3CalibrateDI( true, clip_ch, params.ddecal.bp.parset, params.ddecal.bp.sourcedb, params.ddecal.bp.sols, params.ddecal.bp.incol, params.ddecal.bp.solint )
 
         all_solutions_ch =  mset_ch.collect { it + "/${params.ddecal.bp.sols}" }
 
@@ -149,7 +150,7 @@ workflow DI {
         // mset_ch = channel.fromPath( "${params.data.path}/${params.split.ms_prefix}_T*.MS", glob: true, checkIfExists: true, type: 'dir' )
         mset_ch = channel.fromPath( params.data.ms_files.di, glob: true, checkIfExists: true, type: 'dir' )
 
-        sols_ch = DP3Calibrate( start_ch, mset_ch, params.ddecal.di.parset, params.ddecal.di.sourcedb, params.ddecal.di.sols, params.ddecal.di.incol, params.ddecal.di.solint )
+        sols_ch = DP3CalibrateDI( start_ch, mset_ch, params.ddecal.di.parset, params.ddecal.di.sourcedb, params.ddecal.di.sols, params.ddecal.di.incol, params.ddecal.di.solint )
 
         all_solutions_ch =  mset_ch.collect { it + "/${params.ddecal.di.sols}" }
 
@@ -196,49 +197,6 @@ workflow AVG {
 
 }
 
-
-workflow ATEAMS {
-    take:
-        start_ch
-
-    main:
-
-        // mset_ch = channel.fromPath( "${params.data.path}/${params.average.ditodd.msout}_T*.MS", glob: true, checkIfExists: true, type: 'dir' )
-        mset_ch = channel.fromPath( params.data.ms_files.dd, glob: true, checkIfExists: true, type: 'dir' )
-
-        // flag_ch = Flag (mset_ch, params.ddecal.ateams.outcol)
-
-        clip_ch = ClipData( mset_ch )
-
-        calibrate_ch = DP3Calibrate( start_ch, clip_ch, params.ddecal.ateams.parset, params.ddecal.ateams.sourcedb, params.ddecal.ateams.sols, params.ddecal.ateams.incol, params.ddecal.ateams.solint )
-
-        all_solutions_ch =  mset_ch.collect { it + "/${params.ddecal.ateams.sols}" }
-
-        // clusters_ch  = MakeDP3ClustersListFile( calibrate_ch.collect(), params.number_of_clusters, "clusters_list.txt" )
-        clusters_ch = channel.of( params.ddecal.ateams.subtract.clusters )
-
-        mset_and_sourcedb_ch = mset_ch.flatten().combine( channel.of( params.ddecal.ateams.sourcedb ) )
-
-        mset_sourcedb_solutions_and_clusters_ch = mset_and_sourcedb_ch.merge( all_solutions_ch.flatten() ).combine( clusters_ch )
-
-        subtract_ncp_ch = SubtractSources ( calibrate_ch.collect(), mset_sourcedb_solutions_and_clusters_ch, params.ddecal.ateams.subtract.parset, params.ddecal.ateams.incol, params.ddecal.ateams.outcol )
-
-        aoq_ch = AOqualityCollect( true, subtract_ncp_ch, params.ddecal.ateams.outcol )
-
-        im_names_ch =  mset_ch.collect { it.getSimpleName() + "_" + params.wsclean.imname }
-
-        mset_and_names_ch = mset_ch.merge( im_names_ch.flatten() )
-
-        WScleanImage ( aoq_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, 3, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit,  params.ddecal.ateams.outcol )
-
-    emit:
-
-        WScleanImage.out.done
-
-}
-
-
-
 workflow DD {
     take:
         start_ch
@@ -254,7 +212,7 @@ workflow DD {
 
         clip_ch = ClipData( mset_ch )
 
-        calibrate_ch = DP3Calibrate( start_ch, clip_ch, params.ddecal.dd.parset, params.ddecal.dd.sourcedb, params.ddecal.dd.sols, params.ddecal.dd.incol, params.ddecal.dd.solint )
+        calibrate_ch = DP3CalibrateDD( start_ch, clip_ch, params.ddecal.dd.parset, params.ddecal.dd.sourcedb, params.ddecal.dd.sols, params.ddecal.dd.incol, params.ddecal.dd.solint )
 
         all_solutions_ch =  mset_ch.collect { it + "/${params.ddecal.dd.sols}" }
 
@@ -274,6 +232,47 @@ workflow DD {
         mset_and_names_ch = mset_ch.merge( im_names_ch.flatten() )
 
         WScleanImage ( aoq_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, 3, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit,  params.ddecal.dd.outcol )
+
+    emit:
+
+        WScleanImage.out.done
+
+}
+
+
+workflow ATEAMS {
+    take:
+        start_ch
+
+    main:
+
+        // mset_ch = channel.fromPath( "${params.data.path}/${params.average.ditodd.msout}_T*.MS", glob: true, checkIfExists: true, type: 'dir' )
+        mset_ch = channel.fromPath( params.data.ms_files.dd, glob: true, checkIfExists: true, type: 'dir' )
+
+        // flag_ch = Flag (mset_ch, params.ddecal.ateams.outcol)
+
+        clip_ch = ClipData( mset_ch )
+
+        calibrate_ch = DP3CalibrateDD( start_ch, clip_ch, params.ddecal.ateams.parset, params.ddecal.ateams.sourcedb, params.ddecal.ateams.sols, params.ddecal.ateams.incol, params.ddecal.ateams.solint )
+
+        all_solutions_ch =  mset_ch.collect { it + "/${params.ddecal.ateams.sols}" }
+
+        // clusters_ch  = MakeDP3ClustersListFile( calibrate_ch.collect(), params.number_of_clusters, "clusters_list.txt" )
+        clusters_ch = channel.of( params.ddecal.ateams.subtract.clusters )
+
+        mset_and_sourcedb_ch = mset_ch.flatten().combine( channel.of( params.ddecal.ateams.sourcedb ) )
+
+        mset_sourcedb_solutions_and_clusters_ch = mset_and_sourcedb_ch.merge( all_solutions_ch.flatten() ).combine( clusters_ch )
+
+        subtract_ncp_ch = SubtractSources ( calibrate_ch.collect(), mset_sourcedb_solutions_and_clusters_ch, params.ddecal.ateams.subtract.parset, params.ddecal.ateams.incol, params.ddecal.ateams.outcol )
+
+        aoq_ch = AOqualityCollect( true, subtract_ncp_ch, params.ddecal.ateams.outcol )
+
+        im_names_ch =  mset_ch.collect { it.getSimpleName() + "_" + params.wsclean.imname }
+
+        mset_and_names_ch = mset_ch.merge( im_names_ch.flatten() )
+
+        WScleanImage ( aoq_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, 3, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit,  params.ddecal.ateams.outcol )
 
     emit:
 

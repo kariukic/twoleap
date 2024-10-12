@@ -61,10 +61,39 @@ process UnpackMSTarball {
 }
 
 
-process DP3Calibrate {
+process DP3CalibrateDI {
     debug true
     label 'sing'
-    maxForks 5
+    maxForks 3
+    publishDir "${ms}" , mode: 'copy'
+
+    input:
+        val ready
+        path ms
+        path parset
+        path sourcedb
+        val solsfile
+        val incol
+        val solint
+        // val maxforks
+
+    output:
+        path "${solsfile}"
+
+    script:
+
+        time = getTime()
+
+        """
+        DP3 ${parset} msin=${ms} msin.datacolumn=${incol} ddecal.sourcedb=${sourcedb} ddecal.h5parm=${solsfile} ddecal.solint=${solint} > "${ms}/cal_${solsfile}_${time}.log"
+        """
+}
+
+
+process DP3CalibrateDD {
+    debug true
+    label 'sing'
+    maxForks 1
     publishDir "${ms}" , mode: 'copy'
 
     input:
@@ -268,10 +297,12 @@ process ConcatFrequencySplitTime {
     shell:
         nd  = nodes.join(' ')
         """
-        python3 !{projectDir}/templates/concat_split.py --mslist !{msfiles} --msout !{msout} --ntimes !{ntimes} --nodes !{nd} --datapath !{params.data.path} --datacolumn !{column} --output_ms_list_file !{outtxt} --nmses_per_node !{mses_per_node} > ${params.out.logs}/concat_freqs_split_time.log 2>&1
+        python3 !{projectDir}/templates/concat_split.py --mslist !{msfiles} --msout !{msout} --ntimes !{ntimes} --nodes !{nd} --datapath !{params.data.path} --datacolumn !{column} --output_ms_list_file !{outtxt} --nmses_per_node !{mses_per_node} -t 0.1 > ${params.out.logs}/concat_freqs_split_time.log 2>&1
         """
 
 }
+
+
 
 process WriteMSlist {
     publishDir params.out.logs, mode: "copy", overwrite: true
@@ -283,7 +314,8 @@ process WriteMSlist {
         val txtname
 
     output:
-        path "${txtname}"
+        path "${txtname}", emit: per_line_mslist
+        path "${txtname}.ps", emit: single_line_mslist
     
     script:
     """
@@ -296,31 +328,35 @@ for node in ${nodes}:
 with open("${txtname}", "w") as out:
     for ms in mses:
         out.write(f"{ms}\\n")
+with open("${txtname}.ps", "w") as out:
+        out.write(f"{' '.join(mses)}")
     """
 }
 
 
-process WriteDDMSlist {
-    input:
-        val ready
-        val nodes
+// process WriteDDMSlist {
+//     input:
+//         val ready
+//         val nodes
 
-    output:
-        val true
+//     output:
+//         val true
     
-    script:
-    """
-#!/usr/bin/python3
-from glob import glob
-mses=[]
-for node in ${nodes}:
-    mslist=glob(f"/net/node{node}/${params.data.ms_files.dd}")
-    mses+=mslist
-with open("${params.out.logs}/${params.data.dd_mslist}", "w") as out:
-    for ms in mses:
-        out.write(f"{ms}\\n")
-    """
-}
+//     script:
+//     """
+// #!/usr/bin/python3
+// from glob import glob
+// mses=[]
+// for node in ${nodes}:
+//     mslist=glob(f"/net/node{node}/${params.data.ms_files.dd}")
+//     mses+=mslist
+// with open("${params.out.logs}/${params.data.dd_mslist}", "w") as out:
+//     for ms in mses:
+//         out.write(f"{ms}\\n")
+// with open("${params.out.logs}/${params.data.dd_mslist}.ps", "w") as out:
+//         out.write(f"{' '.join(mses)}")
+//     """
+// }
 
 
 process ApplyBEAM {
@@ -451,7 +487,7 @@ process Average {
 
     script:
         """
-        DP3 steps=[avg] msin=${msin} msin.datacolumn=${data_column} msout=${msout} avg.type=average avg.timestep=${timestep} avg.freqstep=${freqstep}
+        DP3 steps=[avg] msin=${msin} msin.datacolumn=${data_column} msout=${msout} avg.type=average avg.timestep=${timestep} avg.freqstep=${freqstep} msout.overwrite=True
         """
 }
 

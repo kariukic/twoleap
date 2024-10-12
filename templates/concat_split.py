@@ -68,6 +68,7 @@ parser.add_argument(
     "-t",
     "--tolerance",
     default=0.25,
+    type=float,
     help="If the last timechunk is longer than this fraction of the requested chuncklength (ntimes*ms_timestep), make it a separate MS. Otherwise add that chunk to the second last MS",
     required=False,
 )
@@ -188,6 +189,10 @@ def get_ms_duration(MS):
     return duration, timestep
 
 
+def flatten(xss):
+    return [x for xs in xss for x in xs]
+
+
 def distribute(
     msout_name,
     starttimeslots,
@@ -218,9 +223,9 @@ def distribute(
     """
 
     if msout_name[:-2] == "MS":
-        msout = msout_name.strip("MS")
+        msout_name = msout_name.strip("MS")
     if msout_name[:-2] == "ms":
-        msout = msout_name.strip("ms")
+        msout_name = msout_name.strip("ms")
 
     assert datapath.startswith("/data/")
 
@@ -238,6 +243,14 @@ def distribute(
         f"output MS nodes distribution: {list(zip([len(s) for s in msout_names], nodes))}"
     )
 
+    total_mses = flatten(msout_names)
+    if len(starttimeslots) != len(total_mses):
+        assert len(starttimeslots) == len(total_mses) + 1
+        last_ms_num = ms_nums[-1]
+        last_ms_name = msout_name + f"_T{last_ms_num:03}.MS"
+        msout_names[-1].append(last_ms_name)
+        logging.info(f"Node{nodes[-1]} will have 1 extra MS. Total {len(msout_names[-1])}")
+
     all_msout_names = []
     for _n, (node, ms_sublist) in enumerate(zip(nodes, msout_names)):
         nodepath = f"/net/node{node}/{datapath}"
@@ -246,8 +259,6 @@ def distribute(
 
         for ms in ms_sublist:
             all_msout_names.append(f"/net/node{node}/{datapath}/{ms}")
-
-    assert len(starttimeslots) == len(all_msout_names)
 
     return all_msout_names
 
@@ -268,10 +279,12 @@ def splitMS(
 
         comm_prefix = f"DP3 {parset}" if parset else "DP3 steps=[]"
 
-        if t == len(starttimeslots) - 1 and make_last_chunck_longer:
+        if t == len(starttimeslots) - 1:
             comm = f"{comm_prefix} msin='{all_ms_files}' msin.datacolumn={datacolumn} msin.starttimeslot={tslot} msout.overwrite=true msout={msout}"
+
         else:
             comm = f"{comm_prefix} msin='{all_ms_files}' msin.datacolumn={datacolumn} msin.starttimeslot={tslot} msin.ntimes={ntimes} msout.overwrite=true msout={msout}"
+
         logging.info(f"DP3 command: {comm}")
         if not dry_run:
             os.system(comm)
@@ -305,8 +318,16 @@ def concatSubbands(
             starttimeslots = starttimeslots[:nchunks]
 
         remainder = (duration // timestep) % ntimes
+        logging.info(f"Time reminder: {remainder}s")
+
         make_last_chunck_longer = False
-        if remainder < tolerance * timestep * ntimes:
+        logging.info(f"ntimes: {ntimes}")
+        logging.info(f"timestep: {timestep}s")
+        tolerance_in_seconds = tolerance * timestep * ntimes
+
+        logging.info(f"Tolerance in seconds: {tolerance_in_seconds}s")
+
+        if remainder < tolerance_in_seconds:
             starttimeslots = starttimeslots[:-1]
             make_last_chunck_longer = True
             logging.warning(f"The last MS will be of {remainder}s longer duration")

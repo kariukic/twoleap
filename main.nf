@@ -7,7 +7,6 @@ include {
     ConcatFrequencySplitTime;
     ReadTxtLinesandAppend;
     WriteMSlist;
-    WriteDDMSlist;
     writeHosts;
     parseNodes;
     makeDirectory;
@@ -15,6 +14,11 @@ include {
     readTxtAndAppendString;
 } from "./processes.nf"
 
+
+include {
+    AddRevision;
+    RunPSPIPE
+} from "./makeps.nf"
 
 /*
 steps to run
@@ -27,14 +31,16 @@ DD
 PS
 */
 workflow {
+    // ext_ch = EXTRACT( true )
     fcab_ch = FCAB ( true )
     bp_ch = Run_BP( fcab_ch )
     split_ch = Split( bp_ch )
     di_ch = Run_DI ( split_ch )
     avg_ch = Average ( di_ch )
     dd_ch = Run_DD ( avg_ch )
+    ps_ch = PowerSpectrum( dd_ch )
 }
-    // Run_WS( dd_ch )
+// Run_WS( dd_ch )
 
 workflow TwoStep {
     bp_ch = Run_BP( true )
@@ -51,14 +57,13 @@ workflow ExtractDATA {
     ext_ch = EXTRACT( true )
 }
 
-
-
 import groovy.json.JsonOutput
 process InitParams {
     debug true
     publishDir params.out.logs, mode: 'copy'
 
     input:
+        val ready
         val stage
 
     output:
@@ -66,8 +71,18 @@ process InitParams {
         val true, emit: params_standby
 
     script:
-        makeDirectory( params.out.logs ) 
-        nodes_list  = parseNodes( params.data.nodes )
+        makeDirectory( params.out.logs )
+
+        def tasks_after_split = [ "DI", "AVG", "DD", "AT" ]
+
+         if ( tasks_after_split.contains( stage ) ){
+            nodes_list  = parseNodes( params.split.nodes )
+         }
+
+        else {
+            nodes_list  = parseNodes( params.data.nodes )  
+        }
+
         writeHosts ( nodes_list, params.data.hosts )
 
         """
@@ -103,7 +118,7 @@ workflow FCAB {
     main:
         stage_ch = channel.of ( 'FCAB' )
 
-        stage_params_ch = InitParams( stage_ch )
+        stage_params_ch = InitParams( ready, stage_ch )
 
         cal_ch = Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
 
@@ -128,20 +143,19 @@ workflow Run_BP {
 
     take:
 
-        stage_ready
+        ready
 
     main:
 
         stage_ch = channel.of ( 'BP' )
 
-        stage_params_ch = InitParams( stage_ch )
+        stage_params_ch = InitParams( ready, stage_ch )
 
-        cal_ch = Distribute ( stage_params_ch.params_standby, stage_ready, stage_ch, stage_params_ch.params_file )
+        cal_ch = Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
 
         mses = readTxtIntoString ( params.data.bp_mslist )
 
-        solution_files = readTxtAndAppendString( params.data.bp_mslist, "/${params.ddecal.bp.sols}" )
-
+        // solution_files = readTxtAndAppendString( params.data.bp_mslist, "/${params.ddecal.bp.sols}" )
         // sols_collect_ch = H5ParmCollect( cal_ch, solution_files, "bp_combined_solutions" )
 
         aoq_comb_ch = AOqualityCombine( cal_ch, mses, "aoqstats_bp" )  // sols_collect_ch.combined_sols, mses
@@ -165,7 +179,7 @@ workflow Split {
     main:
         mses = readTxtIntoString ( params.data.bp_mslist )
 
-        nodesList = params.data.nodes?.split(',') as List
+        nodesList = params.split.nodes?.split(',') as List
         nodes_ch = channel.fromList( nodesList ).collect {it}
 
         output_mslist = file(params.out.logs).resolve( params.data.di_mslist )
@@ -189,7 +203,7 @@ workflow Run_DI {
 
         stage_ch = channel.of ( 'DI' )
 
-        stage_params_ch = InitParams( stage_ch )
+        stage_params_ch = InitParams( ready,  stage_ch )
 
         cal_ch = Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
 
@@ -219,7 +233,7 @@ workflow Average {
     main:
         stage_ch = channel.of ( 'AVG' )
 
-        stage_params_ch = InitParams( stage_ch )
+        stage_params_ch = InitParams( ready,  stage_ch )
 
         Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
 
@@ -238,16 +252,17 @@ workflow Run_AT {
 
         stage_ch = channel.of ( 'AT' )
 
-        stage_params_ch = InitParams( stage_ch )
+        stage_params_ch = InitParams( ready,  stage_ch )
 
         cal_ch = Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
 
-        nodesList = params.data.nodes?.split(',') as List
+        nodesList = params.split.nodes?.split(',') as List
         nodes_ch = channel.fromList( nodesList ).collect {it}
 
-        mses_ch = WriteDDMSlist( cal_ch, nodes_ch)
+        mses_ch = WriteMSlist( cal_ch, nodes_ch, params.data.ms_files.dd, params.data.dd_mslist)
+        // mses_ch = WriteDDMSlist( cal_ch, nodes_ch)
 
-        mses_sols_ch = ReadTxtLinesandAppend( mses_ch, params.out.logs, params.data.dd_mslist, "/${params.ddecal.ateams.sols}" )
+        mses_sols_ch = ReadTxtLinesandAppend( mses_ch.per_line_mslist, params.out.logs, params.data.dd_mslist, "/${params.ddecal.ateams.sols}" )
 
         // sols_collect_ch = H5ParmCollect( true, mses_sols_ch.list_postfix_str, "dd_combined_solutions" )
 
@@ -273,20 +288,20 @@ workflow Run_DD {
 
         stage_ch = channel.of ( 'DD' )
 
-        stage_params_ch = InitParams( stage_ch )
+        stage_params_ch = InitParams( ready,  stage_ch )
 
         cal_ch = Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
 
-        nodesList = params.data.nodes?.split(',') as List
+        nodesList = params.split.nodes?.split(',') as List
         nodes_ch = channel.fromList( nodesList ).collect {it}
 
-        mses_ch = WriteDDMSlist( cal_ch, nodes_ch)
+        mses_ch = WriteMSlist( cal_ch, nodes_ch, params.data.ms_files.dd, params.data.dd_mslist)
 
-        mses_sols_ch = ReadTxtLinesandAppend( mses_ch, params.out.logs, params.data.dd_mslist, "/${params.ddecal.dd.sols}" )
+        mses_sols_ch = ReadTxtLinesandAppend( mses_ch.per_line_mslist, params.out.logs, params.data.dd_mslist, "/${params.ddecal.dd.sols}" )
 
         // sols_collect_ch = H5ParmCollect( true, mses_sols_ch.list_postfix_str, "dd_combined_solutions" )
 
-        AOqualityCombine( true, mses_sols_ch.list_str, "aoqstats_dd" ) // sols_collect_ch.combined_sols at p1
+        AOqualityCombine( true, mses_sols_ch.list_str, "aoqstats_dd" ) // sols_collect_ch.combined_sols at p1 //aoq_comb_ch = 
 
         // mses_and_imname_ch = mses_sols_ch.list_str.combine( channel.of( "dd_corrected" ) )
 
@@ -308,7 +323,7 @@ workflow Run_WS {
 
         stage_ch = channel.of ( 'WS' )
 
-        stage_params_ch = InitParams( stage_ch )
+        stage_params_ch = InitParams( ready,  stage_ch )
 
         cal_ch = Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
 
@@ -323,8 +338,31 @@ workflow EXTRACT {
 
         stage_ch = channel.of ( 'TAR' )
 
-        stage_params_ch = InitParams( stage_ch )
+        stage_params_ch = InitParams( ready,  stage_ch )
 
-        cal_ch = Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
+        Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
 
+    emit:
+        Distribute.out
+
+}
+
+
+workflow PowerSpectrum {
+    take:
+        ready
+
+    main:
+        nodes_list = params.split.nodes.split(',').collect{"node${it}"} as List
+
+        nodesList = params.split.nodes?.split(',') as List
+        nodes_ch = channel.fromList( nodesList ).collect {it}
+
+        mses_ch = WriteMSlist( ready, nodes_ch, params.data.ms_files.dd, params.data.dd_mslist)
+        // single_line_mslist= channel.of ("/home/codex/chege/projects/NCP2024/process/redshift2/L246309/logs/dd_mses.txt.ps_without_T017_and_T051")
+        // single_line_mslist = channel.of ("/home/codex/chege/projects/NCP2024/process/redshift2/L246309/logs/di_mses.txt.ps")
+
+        ps_dir = "/net/${nodes_list[0]}/${params.data.path}/${params.out.results}/${params.pspipe.dir}"
+        rev_ch = AddRevision(mses_ch.single_line_mslist, params.pspipe.obsid, params.ddecal.dd.outcol, params.data.path, ps_dir, nodes_list[0], params.pspipe.max_concurrent, params.pspipe.revision, params.pspipe.merge_ms, params.pspipe.aoflag_after_merge_ms, 0, 0) // TODO: stop using only the final node
+        ps_ch = RunPSPIPE(ps_dir, rev_ch.toml_file, params.pspipe.obsid, "${params.out.logs}/${params.data.dd_mslist}.ps", params.pspipe.merge_ms, params.pspipe.delay_flagger, params.pspipe.vis_flagger, params.pspipe.gpr, params.pspipe.ml_gpr, params.out.logs)
 }
