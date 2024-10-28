@@ -56,7 +56,7 @@ process UnpackMSTarball {
     script:
         time = getTime()
         """
-        python3 ${projectDir}/templates/untarLTAData.py -i ${ms} -l ${mslabel}  > "extract_${ms}_${time}.log" 2>&1
+        python3 ${projectDir}/templates/untarLTAData.py -i ${ms} -l ${mslabel}  > "${params.out.logs}/extract_${ms}_${time}.log" 2>&1
         """
 }
 
@@ -277,7 +277,7 @@ process H5ParmCollect {
 }
 
 
-process ConcatFrequencySplitTime {
+process MergeChansSplitTime {
     label 'sing'
     maxForks 1
 
@@ -302,6 +302,68 @@ process ConcatFrequencySplitTime {
 
 }
 
+
+process SplitMSToSubbands {
+    label 'sing'
+
+    input:
+        val ready
+        val msfile
+        val nchans_per_msout
+        val datacolumn
+
+    output:
+        val true
+
+    shell:
+        """
+        python3 ${projectDir}/templates/split_mschans.py -m !{msfile} -n !{nchans_per_msout} -d !{datacolumn} > ${msfile}/split_mschans_to_subbands.log 2>&1
+        """
+
+}
+
+
+process GetTimeChunksPerSubband {
+    label 'sing'
+
+    input:
+        val ready
+        val msin
+        val nmses_per_node
+        val from_nodes
+        val to_nodes
+
+    output:
+        val true
+
+    shell:
+        fnds  = from_nodes.join(' ')
+        tnds  = to_nodes.join(' ')
+        """
+        python3 ${projectDir}/templates/write_subband_time_chunks.py -m !{msin} -d !{params.data.path} -n !{nmses_per_node} -f !{fnds} -t !{tnds} > ${params.out.logs}/write_subband_time_chunks.log 2>&1
+        """
+
+}
+
+
+process ConcatMSesinTime {
+    label 'sing'
+    publishDir "${params.data.path}", mode: "move", overwrite: true
+
+    input:
+        val ready
+        tuple val(msfiles), val(msout)
+
+    output:
+        path "${msout}"
+        val true, emit: done
+
+    shell:
+        """
+        python3 ${projectDir}/templates/concat_mses_in_time.py !{msfiles} --msout !{msout} --concat_property time > ${params.out.logs}/!{msout}_concat_mses_in_time.log 2>&1
+        """
+
+}
 
 
 process WriteMSlist {
@@ -432,6 +494,10 @@ process Compress {
 
     input:
         path ms
+        val nbits
+        val normalization
+        val distribution
+        val disttruncation
 
     output:
         // path "${ms.getSimpleName()}_DC.MS"
@@ -440,7 +506,7 @@ process Compress {
     script:
         time=getTime()
         """
-        DP3 steps=[aoflag,interpolate] msin=${ms} msin.datacolumn=DATA aoflag.type=aoflagger aoflag.memoryperc=20 msout="${ms.getName().replace(".MS", ".DCMS")}" msout.storagemanager=dysco  > "${ms}/compress_after_flagging_col_${time}.log" 2>&1
+        DP3 steps=[aoflag,interpolate] msin=${ms} msin.datacolumn=DATA aoflag.type=aoflagger aoflag.memoryperc=20 msout="${ms.getName().replace(".MS", ".DCMS")}" msout.storagemanager=dysco msout.storagemanager.databitrate=${nbits} msout.storagemanager.distribution=${distribution} msout.storagemanager.normalization=${normalization} msout.storagemanager.disttruncation=${disttruncation} > "${ms}/compress_after_flagging_col_${time}.log" 2>&1
         """
 }
 

@@ -15,6 +15,8 @@ include {
     Compress;
     Average;
     UnpackMSTarball;
+    SplitMSToSubbands;
+    ConcatMSesinTime;
     readTxtIntoString;
 } from './processes.nf'
 
@@ -34,13 +36,25 @@ workflow {
 
     if ( params.stage == "BP" ) {
         
-        BP ( params.ch_in )
+        DIBandpass ( params.ch_in )
 
     }
 
     if ( params.stage == "DI" ) {
         
-        DI ( params.ch_in )
+        DISmooth ( params.ch_in )
+
+    }
+
+    if ( params.stage == "SB" ) {
+        
+        SB ( params.ch_in )
+
+    }
+
+    if ( params.stage == "CT" ) {
+        
+        CT ( params.ch_in )
 
     }
 
@@ -81,7 +95,7 @@ workflow FCAB {
 
         mset_ch = channel.fromPath( params.data.ms_files.raw, glob: true, checkIfExists: true, type: 'dir' )
 
-        compress_ch = Compress( mset_ch )
+        compress_ch = Compress( mset_ch, params.dysco.nbits, params.dysco.normalization, params.dysco.distribution, params.dysco.disttruncation )
 
         compressed_mset_ch = mset_ch.collect { "${params.data.path}/" + it.getName().replace( ".MS", ".DCMS" ) }
 
@@ -102,7 +116,83 @@ workflow FCAB {
 }
 
 
-workflow BP {
+workflow DISmooth {
+
+    take:
+        start_ch
+
+    main:
+
+        mset_ch = channel.fromPath( params.data.ms_files.di, glob: true, checkIfExists: true, type: 'dir' )
+
+        scale_ch = ScaleData( mset_ch )
+
+        clip_ch = ClipData( scale_ch )
+
+        sols_ch = DP3CalibrateDI( start_ch, clip_ch, params.ddecal.di.parset, params.ddecal.di.sourcedb, params.ddecal.di.sols, params.ddecal.di.incol, params.ddecal.di.solint )
+
+        all_solutions_ch =  mset_ch.collect { it + "/${params.ddecal.di.sols}" }
+
+        mset_and_solutions_ch = mset_ch.merge( all_solutions_ch.flatten() )
+
+        apply_gains_ch = ApplyGains ( sols_ch.collect(), mset_and_solutions_ch, params.ddecal.di.apply.parset, params.ddecal.di.incol, params.ddecal.di.outcol)
+
+        aoq_ch = AOqualityCollect( true, apply_gains_ch, params.ddecal.di.outcol )
+    
+        im_names_ch =  mset_ch.collect { it.getSimpleName() + "_" + params.wsclean.imname }
+
+        mset_and_names_ch = mset_ch.merge( im_names_ch.flatten() )
+
+        WScleanImage ( aoq_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, 3, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit,  params.ddecal.di.outcol )
+
+    emit:
+
+        WScleanImage.out.done
+
+}
+
+
+workflow SB {
+
+    take:
+        start_ch
+
+    main:
+
+        mset_ch = channel.fromPath( params.data.ms_files.di, glob: true, checkIfExists: true, type: 'dir' )
+
+        SplitMSToSubbands( start_ch, mset_ch, 3, 'DI_CORRECTED' )
+
+    emit:
+
+        SplitMSToSubbands.out
+
+}
+
+workflow CT {
+
+    take:
+        start_ch
+
+    main:
+        
+        txts_ch = channel.fromPath( "${params.data.path}/${params.split.di.ms_prefix}_*.txt", glob: true, checkIfExists: true )
+
+        msouts_ch =  txts_ch.collect { it.getSimpleName() + ".MS" }
+
+        txts_and_msouts_ch = txts_ch.merge( msouts_ch.flatten() )
+
+        ConcatMSesinTime( start_ch, txts_and_msouts_ch )
+
+    emit:
+
+        ConcatMSesinTime.out.done
+
+}
+
+
+
+workflow DIBandpass {
 
     take:
         start_ch
@@ -110,13 +200,10 @@ workflow BP {
     main:
 
         // String mspattern= params.ms.split(',').collect{"${it}"}.join("*")
+        // mset_ch = channel.fromPath( params.data.ms_files.bp, glob: true, checkIfExists: true, type: 'dir' )
         mset_ch = channel.fromPath( params.data.ms_files.bp, glob: true, checkIfExists: true, type: 'dir' )
 
-        scale_ch = ScaleData( mset_ch )
-
-        clip_ch = ClipData( scale_ch )
-
-        sols_ch = DP3CalibrateDI( true, clip_ch, params.ddecal.bp.parset, params.ddecal.bp.sourcedb, params.ddecal.bp.sols, params.ddecal.bp.incol, params.ddecal.bp.solint )
+        sols_ch = DP3CalibrateDI( start_ch, mset_ch, params.ddecal.bp.parset, params.ddecal.bp.sourcedb, params.ddecal.bp.sols, params.ddecal.bp.incol, params.ddecal.bp.solint )
 
         all_solutions_ch =  mset_ch.collect { it + "/${params.ddecal.bp.sols}" }
 
@@ -124,49 +211,15 @@ workflow BP {
 
         apply_gains_ch = ApplyGains ( sols_ch.collect(), mset_and_solutions_ch, params.ddecal.bp.apply.parset, params.ddecal.bp.incol, params.ddecal.bp.outcol )
 
-        aoq_ch = AOqualityCollect( true, apply_gains_ch, params.ddecal.bp.outcol )
+        apply_elbeam_ch = ApplyBEAM( true, apply_gains_ch, params.ddecal.beam.parset, params.ddecal.bp.outcol, params.ddecal.beam.outcol )
+
+        aoq_ch = AOqualityCollect( true, apply_elbeam_ch, params.ddecal.beam.outcol )
     
         im_names_ch =  mset_ch.collect { it.getSimpleName() + "_" + params.wsclean.imname }
 
         mset_and_names_ch = mset_ch.merge( im_names_ch.flatten() )
 
-        WScleanImage ( aoq_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, 3, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit,  params.ddecal.bp.outcol )
-
-    emit:
-
-        WScleanImage.out.done
-
-
-}
-
-
-workflow DI {
-
-    take:
-        start_ch
-
-    main:
-
-        // mset_ch = channel.fromPath( "${params.data.path}/${params.split.ms_prefix}_T*.MS", glob: true, checkIfExists: true, type: 'dir' )
-        mset_ch = channel.fromPath( params.data.ms_files.di, glob: true, checkIfExists: true, type: 'dir' )
-
-        sols_ch = DP3CalibrateDI( start_ch, mset_ch, params.ddecal.di.parset, params.ddecal.di.sourcedb, params.ddecal.di.sols, params.ddecal.di.incol, params.ddecal.di.solint )
-
-        all_solutions_ch =  mset_ch.collect { it + "/${params.ddecal.di.sols}" }
-
-        mset_and_solutions_ch = mset_ch.merge( all_solutions_ch.flatten() )
-
-        apply_gains_ch = ApplyGains ( sols_ch.collect(), mset_and_solutions_ch, params.ddecal.di.apply.parset, params.ddecal.di.incol, params.ddecal.di.outcol) //
-
-        apply_elbeam_ch = ApplyBEAM(true, apply_gains_ch, params.ddecal.di.beam.parset, params.ddecal.di.outcol, params.ddecal.di.beam.outcol )
-
-        aoq_ch = AOqualityCollect( true, apply_elbeam_ch, params.ddecal.di.beam.outcol )
-    
-        im_names_ch =  mset_ch.collect { it.getSimpleName() + "_" + params.wsclean.imname }
-
-        mset_and_names_ch = mset_ch.merge( im_names_ch.flatten() )
-
-        WScleanImage ( aoq_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, 3, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit,  params.ddecal.di.beam.outcol )
+        WScleanImage ( aoq_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, 3, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit,  params.ddecal.beam.outcol )
 
     emit:
 
@@ -183,19 +236,20 @@ workflow AVG {
     main:
 
         // mset_ch = channel.fromPath( "${params.data.path}/${params.split.ms_prefix}_T*.MS", glob: true, checkIfExists: true, type: 'dir' )
-        mset_ch = channel.fromPath( params.data.ms_files.di, glob: true, checkIfExists: true, type: 'dir' )
+        mset_ch = channel.fromPath( params.data.ms_files.bp, glob: true, checkIfExists: true, type: 'dir' )
 
         averaged_msnames_ch = mset_ch.collect { it.getName().replace( "_002", "_003" ) }
         
         all_msets_and_averaged_msnames_ch = mset_ch.flatten().merge( averaged_msnames_ch.flatten() )
 
-        Average ( true, all_msets_and_averaged_msnames_ch, params.ddecal.di.beam.outcol, params.average.ditodd.timestep, params.average.ditodd.freqstep )
+        Average ( true, all_msets_and_averaged_msnames_ch, params.ddecal.beam.outcol, params.average.ditodd.timestep, params.average.ditodd.freqstep )
 
     emit:
 
         Average.out.done_averaging
 
 }
+
 
 workflow DD {
     take:
@@ -293,7 +347,7 @@ workflow WS {
 
         mset_and_names_ch = mset_ch.merge( im_names_ch.flatten() )
 
-        WScleanImage ( start_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, params.wsclean.chansout, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit, params.wsclean.column )  //params.ddecal.di.beam.outcol ) // params.ddecal.dd.outcol
+        WScleanImage ( start_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, params.wsclean.chansout, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit, params.wsclean.column )  //params.ddecal.beam.outcol ) // params.ddecal.dd.outcol
 
 }
 
