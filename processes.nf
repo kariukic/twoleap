@@ -40,6 +40,62 @@ process ClipData {
         """
 }
 
+process FlagStations {
+    debug true
+    label 'sing'
+
+    input:
+        path ms
+
+    output:
+        path "${ms}"
+
+    script:
+        time = getTime()
+        """
+        python3 /home/codex/chege/software/pipelines/twoleap/templates/flag_stations.py -i ${ms} -r  > "${ms}/flag_station_${time}.log" 2>&1
+        """
+}
+
+
+process FilterBaselines {
+    debug true
+    label 'sing'
+
+    input:
+        path ms
+
+    output:
+        path "${ms}"
+
+    script:
+        time = getTime()
+        """"
+        DP3 msin=${ms} steps=[filter] filter.remove=true filter.baseline="[CR]S*&&"
+        """
+}
+
+process FitBpol {
+    debug true
+    publishDir "${ms}" , mode: 'copy'
+
+    input:
+        val ready
+        tuple path(ms), path(solsfile)
+        val degree
+
+    output:
+        path "${solsfile.getSimpleName()}_degree${degree}_bpol.h5"
+        
+    script:
+        time = getTime()
+        """
+        python3 ${projectDir}/templates/fit_bpol.py -s ${solsfile} -d ${degree}   > "${params.out.logs}/fit_degree${degree}_bpol_${ms}_${solsfile}_${time}.log" 2>&1
+        """
+}
+
+
+
 process UnpackMSTarball {
     debug true
     label 'sing'
@@ -75,7 +131,9 @@ process DP3CalibrateDI {
         val solsfile
         val incol
         val solint
-        // val maxforks
+        val uvlambdamin
+        val uvlambdamax
+        val nchan
 
     output:
         path "${solsfile}"
@@ -85,7 +143,7 @@ process DP3CalibrateDI {
         time = getTime()
 
         """
-        DP3 ${parset} msin=${ms} msin.datacolumn=${incol} ddecal.sourcedb=${sourcedb} ddecal.h5parm=${solsfile} ddecal.solint=${solint} > "${ms}/cal_${solsfile}_${time}.log"
+        DP3 ${parset} msin=${ms} msin.datacolumn=${incol} ddecal.sourcedb=${sourcedb} ddecal.h5parm=${solsfile} ddecal.solint=${solint} ddecal.uvlambdamin=${uvlambdamin} ddecal.uvlambdamax=${uvlambdamax} ddecal.nchan=${nchan} > "${ms}/cal_${solsfile}_${time}.log"
         """
 }
 
@@ -93,7 +151,7 @@ process DP3CalibrateDI {
 process DP3CalibrateDD {
     debug true
     label 'sing'
-    maxForks 1
+    maxForks 2
     publishDir "${ms}" , mode: 'copy'
 
     input:
@@ -104,7 +162,9 @@ process DP3CalibrateDD {
         val solsfile
         val incol
         val solint
-        // val maxforks
+        val uvlambdamin
+        val uvlambdamax
+        val nchan
 
     output:
         path "${solsfile}"
@@ -114,7 +174,7 @@ process DP3CalibrateDD {
         time = getTime()
 
         """
-        DP3 ${parset} msin=${ms} msin.datacolumn=${incol} ddecal.sourcedb=${sourcedb} ddecal.h5parm=${solsfile} ddecal.solint=${solint} > "${ms}/cal_${solsfile}_${time}.log"
+        DP3 ${parset} msin=${ms} msin.datacolumn=${incol} ddecal.sourcedb=${sourcedb} ddecal.h5parm=${solsfile} ddecal.solint=${solint} ddecal.uvlambdamin=${uvlambdamin} ddecal.uvlambdamax=${uvlambdamax} ddecal.nchan=${nchan} > "${ms}/cal_${solsfile}_${time}.log"
         """
 }
 
@@ -210,12 +270,21 @@ process WScleanImage {
         // path "${imname}-sources.txt", emit: model
 
     script:
-        """
-        wsclean -name ${imname} -data-column ${datacol} -pol ${pol} -weight ${weight}  -minuv-l ${minuvl} -maxuv-l ${maxuvl} -scale ${scale} -size ${size} ${size} -make-psf -niter ${niter} -join-channels -channels-out ${chansout} -gridder wgridder -wgridder-accuracy 1e-5 -reorder -no-mf-weighting ${mses} > ${params.out.logs}/wsclean_${imname}_image.log
-        """
+        if ( chansout == 1 )
+            """
+            wsclean -name ${imname} -data-column ${datacol} -pol ${pol} -weight ${weight}  -minuv-l ${minuvl} -maxuv-l ${maxuvl} -scale ${scale} -size ${size} ${size} -make-psf -niter ${niter} -gridder wgridder -wgridder-accuracy 1e-5 -reorder -no-mf-weighting ${mses} > ${params.out.logs}/wsclean_${imname}_image.log
+            """
+
+        else
+            """
+            wsclean -name ${imname} -data-column ${datacol} -pol ${pol} -weight ${weight}  -minuv-l ${minuvl} -maxuv-l ${maxuvl} -scale ${scale} -size ${size} ${size} -make-psf -niter ${niter} -join-channels -channels-out ${chansout} -gridder wgridder -wgridder-accuracy 1e-5 -reorder -no-mf-weighting ${mses} > ${params.out.logs}/wsclean_${imname}_image.log
+            """
+
 }
 
 // -save-source-list -fit-spectral-pol !{spectral_pol_fit} -multiscale -no-update-model-required -auto-mask 3 -auto-threshold 1 -mgain 0.6 -local-rms
+
+
 // Collect data quality statistics
 process AOqualityCollect {
     label 'sing'
@@ -489,7 +558,7 @@ process Flag {
 process Compress {
     debug true
     label 'sing'
-    maxForks 5
+    maxForks 3
     publishDir "${params.data.path}", mode: 'move'
 
     input:
@@ -506,9 +575,34 @@ process Compress {
     script:
         time=getTime()
         """
-        DP3 steps=[aoflag,interpolate] msin=${ms} msin.datacolumn=DATA aoflag.type=aoflagger aoflag.memoryperc=20 msout="${ms.getName().replace(".MS", ".DCMS")}" msout.storagemanager=dysco msout.storagemanager.databitrate=${nbits} msout.storagemanager.distribution=${distribution} msout.storagemanager.normalization=${normalization} msout.storagemanager.disttruncation=${disttruncation} > "${ms}/compress_after_flagging_col_${time}.log" 2>&1
+        DP3 steps=[aoflag,interpolate] msin=${ms} msin.datacolumn=DATA aoflag.type=aoflagger aoflag.memoryperc=20 msout="${ms.getName().replace(".MS", ".DCMS")}" msout.storagemanager=dysco msout.storagemanager.databitrate=${nbits} msout.storagemanager.distribution=${distribution} msout.storagemanager.normalization=${normalization} msout.storagemanager.disttruncation=${disttruncation} msout.overwrite=True > "${ms}/compress_after_flagging_col_${time}.log" 2>&1
         """
 }
+
+process Demix {
+    debug true
+    label 'sing'
+    maxForks 1
+    publishDir "${params.data.path}", mode: 'move'
+
+    input:
+        path ms
+        val nbits
+        val normalization
+        val distribution
+        val disttruncation
+
+    output:
+        // path "${ms.getSimpleName()}_DC.MS"
+        path "${ms.getName().replace(".MS", ".MS.demixed")}"
+
+    script:
+        time=getTime()
+        """
+        DP3 steps=[aoflag,interpolate] msin=${ms} msin.datacolumn=DATA aoflag.type=aoflagger aoflag.memoryperc=20 msout="${ms.getName().replace(".MS", ".DCMS")}" msout.storagemanager=dysco msout.storagemanager.databitrate=${nbits} msout.storagemanager.distribution=${distribution} msout.storagemanager.normalization=${normalization} msout.storagemanager.disttruncation=${disttruncation} msout.overwrite=True > "${ms}/compress_after_flagging_col_${time}.log" 2>&1
+        """
+}
+
 
 
 // process AverageDItoDDMS {
@@ -548,12 +642,37 @@ process Average {
 
 
     output:
-        path "${msout}"
+        path "${msout}", emit: averaged_ms
         val true , emit: done_averaging
 
     script:
+        time=getTime()
         """
-        DP3 steps=[avg] msin=${msin} msin.datacolumn=${data_column} msout=${msout} avg.type=average avg.timestep=${timestep} avg.freqstep=${freqstep} msout.overwrite=True
+        DP3 steps=[avg] msin=${msin} msin.datacolumn=${data_column} msout=${msout} avg.type=average avg.timestep=${timestep} avg.freqstep=${freqstep} msout.overwrite=True > "${params.out.logs}/average_${msin}_${timestep}tstep_${freqstep}freqstep_${time}.log"
+        """
+}
+
+
+process FilterBaselinesAndAverage {
+    label 'sing'
+    publishDir params.data.path, mode: 'move'
+
+    input:
+        val ready
+        tuple path(msin), val(msout)
+        val data_column
+        val timestep
+        val freqstep
+
+
+    output:
+        path "${msout}", emit: filtered_averaged_ms
+        val true , emit: done
+
+    script:
+        time=getTime()
+        """
+        DP3 steps=[filter,avg] msin=${msin} msin.datacolumn=${data_column} filter.remove=true filter.baseline="[CR]S*&&" avg.type=average avg.timestep=${timestep} avg.freqstep=${freqstep} msout=${msout} msout.overwrite=True > "${params.out.logs}/average_${msin}_${timestep}tstep_${freqstep}freqstep_${time}.log"
         """
 }
 
