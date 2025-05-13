@@ -10,10 +10,10 @@ process ScaleData {
     label 'sing'
 
     input:
-    path ms
+        path ms
 
     output: 
-    path "${ms}"
+        path "${ms}"
 
     script:
         time = getTime()
@@ -22,6 +22,32 @@ process ScaleData {
         """
 }
 
+process FlagIntra {
+    debug true
+    label 'sing'
+
+    input:
+        val ready
+        path ms
+
+    output:
+        val true
+
+    script:
+        time = getTime()
+        """
+        python3 /home/codex/chege/software/pipelines/twoleap/templates/flag_intrastations.py -i ${ms} > "${ms}/flag_intrastations_${time}.log" 2>&1
+        """
+
+}
+//         """
+//         // #!/usr/bin/env python3
+//         // import casacore.tables as tab
+//         // tab.taql(
+//         //         r'UPDATE ${ms} SET FLAG=True WHERE mscal.baseline("/(.*)HBA0&\1HBA1/")'
+//         //     )
+//         """
+// }
 
 process ClipData {
     debug true
@@ -39,6 +65,7 @@ process ClipData {
         python3 /home/codex/chege/software/pipelines/nextleap/templates/clip_data.py -i ${ms} --flag_intrastations --flag_badbaselines -c DATA  > "${ms}/clip_${time}.log" 2>&1
         """
 }
+
 
 process FlagStations {
     debug true
@@ -58,22 +85,25 @@ process FlagStations {
 }
 
 
-process FilterBaselines {
+process FilterInter {
     debug true
-    label 'sing'
+    label 'singDPPP'
+    publishDir "${params.data.path}", mode: 'move'
 
     input:
+        val ready
         path ms
 
     output:
-        path "${ms}"
+        path "${ms.getName().replace(".MS", ".FMS")}"
 
     script:
         time = getTime()
-        """"
-        DP3 msin=${ms} steps=[filter] filter.remove=true filter.baseline="[CR]S*&&"
+        """
+        DP3 msin=${ms} steps=[filter] filter.remove=true filter.baseline="[CR]S*&&" msout="${ms.getName().replace(".MS", ".FMS")}" msout.overwrite=True > "${ms}/filter_intrastations_and_international_stations_${time}.log" 2>&1
         """
 }
+
 
 process FitBpol {
     debug true
@@ -117,10 +147,41 @@ process UnpackMSTarball {
 }
 
 
+process DP3GainCalDI {
+    debug true
+    label 'singDPPP'
+    maxForks 4
+    publishDir "${ms}" , mode: 'copy'
+
+    input:
+        val ready
+        path ms
+        path parset
+        path sourcedb
+        val solsfile
+        val incol
+        val solint
+        val uvlambdamin
+        val uvlambdamax
+        val nchan
+
+    output:
+        path "${solsfile}"
+
+    script:
+
+        time = getTime()
+
+        """
+        DP3 ${parset} msin=${ms} msin.datacolumn=${incol} gaincal.sourcedb=${sourcedb} gaincal.parmdb=${solsfile} gaincal.solint=${solint} gaincal.uvlambdamin=${uvlambdamin} gaincal.uvlambdamax=${uvlambdamax} gaincal.nchan=${nchan} > "${ms}/cal_${solsfile}_${time}.log"
+        """
+}
+
+
 process DP3CalibrateDI {
     debug true
-    label 'sing'
-    maxForks 3
+    label 'singDPPP'
+    maxForks 4
     publishDir "${ms}" , mode: 'copy'
 
     input:
@@ -150,7 +211,7 @@ process DP3CalibrateDI {
 
 process DP3CalibrateDD {
     debug true
-    label 'sing'
+    label 'singDPPP'
     maxForks 2
     publishDir "${ms}" , mode: 'copy'
 
@@ -165,6 +226,7 @@ process DP3CalibrateDD {
         val uvlambdamin
         val uvlambdamax
         val nchan
+        val flagstations
 
     output:
         path "${solsfile}"
@@ -173,15 +235,24 @@ process DP3CalibrateDD {
 
         time = getTime()
 
-        """
-        DP3 ${parset} msin=${ms} msin.datacolumn=${incol} ddecal.sourcedb=${sourcedb} ddecal.h5parm=${solsfile} ddecal.solint=${solint} ddecal.uvlambdamin=${uvlambdamin} ddecal.uvlambdamax=${uvlambdamax} ddecal.nchan=${nchan} > "${ms}/cal_${solsfile}_${time}.log"
-        """
+        if ( flagstations )
+
+            """
+            DP3 ${parset} steps=[preflagger,ddecal] msin=${ms} preflagger.baseline="${flagstations}" msin.datacolumn=${incol} ddecal.sourcedb=${sourcedb} ddecal.h5parm=${solsfile} ddecal.solint=${solint} ddecal.uvlambdamin=${uvlambdamin} ddecal.uvlambdamax=${uvlambdamax} ddecal.nchan=${nchan} > "${ms}/cal_${solsfile}_${time}.log"
+            """
+
+
+        else
+
+            """
+            DP3 ${parset} steps=[ddecal] msin=${ms} msin.datacolumn=${incol} ddecal.sourcedb=${sourcedb} ddecal.h5parm=${solsfile} ddecal.solint=${solint} ddecal.uvlambdamin=${uvlambdamin} ddecal.uvlambdamax=${uvlambdamax} ddecal.nchan=${nchan} > "${ms}/cal_${solsfile}_${time}.log"
+            """
 }
 
 
 process ApplyGains {
     debug true
-    label 'sing'
+    label 'singDPPP'
 
     input:
         val ready
@@ -204,12 +275,15 @@ process ApplyGains {
 
 
 
-//Subtract a sky direction(s)
+//Subtract a sky direction(s). For subtracting specific directions use this in the shell instead of script
+// '''
+// #directions_to_subtract=$(<!{sources_to_subtract_file})
+// #DP3 !{subtraction_parset} msin=!{full_ms_path} sub.applycal.parmdb=!{calibration_solutions_file} sub.sourcedb=!{sourcedb_name} sub.directions=${directions_to_subtract} msin.datacolumn=!{input_datacolumn} msout.datacolumn=!{output_datacolumn}> di_sub.log
 process SubtractSources {
-    label 'sing'
+    label 'singDPPP'
     input:
         val ready
-        tuple path(full_ms_path), path(sourcedb_name), path(calibration_solutions_file), path(sources_to_subtract_file)
+        tuple path(full_ms_path), path(sourcedb_name), path(calibration_solutions_file) //, path(sources_to_subtract_file)
         path subtraction_parset
         val input_datacolumn
         val output_datacolumn
@@ -217,11 +291,11 @@ process SubtractSources {
     output:
         path "${full_ms_path}"
     
-    shell:
-        '''
-        directions_to_subtract=$(<!{sources_to_subtract_file})
-        DP3 !{subtraction_parset} msin=!{full_ms_path} sub.applycal.parmdb=!{calibration_solutions_file} sub.sourcedb=!{sourcedb_name} sub.directions=${directions_to_subtract} msin.datacolumn=!{input_datacolumn} msout.datacolumn=!{output_datacolumn}> di_sub.log
-        '''
+    script:
+        time = getTime()
+        """
+        DP3 ${subtraction_parset} msin=${full_ms_path} sub.applycal.parmdb=${calibration_solutions_file} sub.sourcedb=${sourcedb_name} msin.datacolumn=${input_datacolumn} msout.datacolumn=${output_datacolumn} > "${full_ms_path}/dd_subtract_${time}.log" 2>&1
+        """
 }
 
 
@@ -245,7 +319,7 @@ process MakeDP3ClustersListFile {
 
 
 process WScleanImage {
-    label 'sing'
+    label 'singDPPP'
     publishDir "${params.data.path}/${params.out.results}/wsclean/${datacol}", pattern: "*.fits", mode: "move", overwrite: true
     // publishDir "${params.data.path}/${params.out.results}/images", pattern: "*.txt", mode: "copy", overwrite: true
 
@@ -272,22 +346,26 @@ process WScleanImage {
     script:
         if ( chansout == 1 )
             """
-            wsclean -name ${imname} -data-column ${datacol} -pol ${pol} -weight ${weight}  -minuv-l ${minuvl} -maxuv-l ${maxuvl} -scale ${scale} -size ${size} ${size} -make-psf -niter ${niter} -gridder wgridder -wgridder-accuracy 1e-5 -reorder -no-mf-weighting ${mses} > ${params.out.logs}/wsclean_${imname}_image.log
+            wsclean -v -log-time -name ${imname} -data-column ${datacol} -pol ${pol} -weight ${weight} -scale ${scale} -size ${size} ${size} -make-psf -niter ${niter} -gridder wgridder -reorder ${mses} > ${params.out.logs}/wsclean_${imname}_image.log
             """
 
         else
             """
-            wsclean -name ${imname} -data-column ${datacol} -pol ${pol} -weight ${weight}  -minuv-l ${minuvl} -maxuv-l ${maxuvl} -scale ${scale} -size ${size} ${size} -make-psf -niter ${niter} -join-channels -channels-out ${chansout} -gridder wgridder -wgridder-accuracy 1e-5 -reorder -no-mf-weighting ${mses} > ${params.out.logs}/wsclean_${imname}_image.log
+            wsclean -v -log-time -name ${imname} -data-column ${datacol} -pol ${pol} -weight ${weight} -scale ${scale} -size ${size} ${size} -niter ${niter} -apply-primary-beam -make-psf -join-channels -channels-out ${chansout} -gridder wgridder -no-update-model-required -no-dirty -no-mf-weighting ${mses} > ${params.out.logs}/wsclean_${imname}_image.log
             """
 
 }
+
+//   -minuv-l ${minuvl} -maxuv-l ${maxuvl}
+//   -minuv-l ${minuvl} -maxuv-l ${maxuvl}
+
 
 // -save-source-list -fit-spectral-pol !{spectral_pol_fit} -multiscale -no-update-model-required -auto-mask 3 -auto-threshold 1 -mgain 0.6 -local-rms
 
 
 // Collect data quality statistics
 process AOqualityCollect {
-    label 'sing'
+    label 'singDPPP'
 
     input:
         val ready
@@ -305,7 +383,7 @@ process AOqualityCollect {
 
 
 process AOqualityCombine {
-    label 'sing'
+    label 'singDPPP'
     
     input:
         val ready
@@ -491,7 +569,7 @@ with open("${txtname}.ps", "w") as out:
 
 
 process ApplyBEAM {
-    label 'sing'
+    label 'singDPPP'
 
     input:
         val ready
@@ -532,32 +610,67 @@ process ReadTxtLinesandAppend {
 
 }
 
-
-process Flag {
+//aoflag.memoryperc=20 : Not used for Emilio run #Also make interpolation optional!!
+process AOFlag {
 
     debug true
-    label 'sing'
+    label 'singDPPP'
     publishDir "${params.data.path}", mode: 'move'
 
     input:
+        val ready
         path ms
         val column
+        path aoflagger_strategy
+        val interpolate
 
     output:
-        path "${ms.getSimpleName()}_flagged.MS"
+        // path "${ms}"
+        val true , emit: done
+    
+
+    script:
+        time=getTime()
+
+        if ( interpolate == 1 )
+            """
+            DP3 steps=[aoflag,interpolate] msin=${ms} msin.datacolumn=${column} aoflag.type=aoflagger aoflag.strategy=${aoflagger_strategy} msout=. msout.overwrite=True > "${params.out.logs}/flag_${ms}_${column}_${time}.log" 2>&1
+            """
+        else
+            """
+            DP3 steps=[aoflag] msin=${ms} msin.datacolumn=${column} aoflag.type=aoflagger aoflag.strategy=${aoflagger_strategy} msout=. msout.overwrite=True > "${params.out.logs}/flag_${ms}_${column}_${time}.log" 2>&1
+            """
+}
+
+process UVWFlag {
+
+    debug true
+    label 'singDPPP'
+    publishDir "${params.data.path}", mode: 'move'
+
+    input:
+        val ready
+        path msin
+        val data_column
+        val uvlambdamin
+        val uvlambdamax
+
+    output:
+        val true , emit: done
     
 
     script:
         time=getTime()
         """
-        DP3 steps=[aoflag,interpolate] msin=${ms} msin.datacolumn=${column} aoflag.type=aoflagger aoflag.memoryperc=20 msout="${ms.getSimpleName()}_flagged.MS" > "${ms}/flag_${column}_${time}.log" 2>&1
+        DP3 steps=[uvwflag] msin=${msin} msin.datacolumn=${data_column} uvwflag.uvlambdamin=${uvlambdamin} uvwflag.uvlambdamax=${uvlambdamax} msout=. msout.overwrite=True > "${params.out.logs}/uvwflag_${msin}_${data_column}_${time}.log" 2>&1
         """
-} 
+}
+
 
 
 process Compress {
     debug true
-    label 'sing'
+    label 'singDPPP'
     maxForks 3
     publishDir "${params.data.path}", mode: 'move'
 
@@ -581,32 +694,36 @@ process Compress {
 
 process Demix {
     debug true
-    label 'sing'
-    maxForks 1
+    label 'sing_demix'
+    maxForks 3
     publishDir "${params.data.path}", mode: 'move'
 
     input:
-        path ms
-        val nbits
-        val normalization
-        val distribution
-        val disttruncation
+        val enabled
+        path msin
+        path parset
+        path sourcedb
 
     output:
-        // path "${ms.getSimpleName()}_DC.MS"
-        path "${ms.getName().replace(".MS", ".MS.demixed")}"
+        path "${msin.getName().replace(".FMS", ".FDMS")}"
 
     script:
         time=getTime()
-        """
-        DP3 steps=[aoflag,interpolate] msin=${ms} msin.datacolumn=DATA aoflag.type=aoflagger aoflag.memoryperc=20 msout="${ms.getName().replace(".MS", ".DCMS")}" msout.storagemanager=dysco msout.storagemanager.databitrate=${nbits} msout.storagemanager.distribution=${distribution} msout.storagemanager.normalization=${normalization} msout.storagemanager.disttruncation=${disttruncation} msout.overwrite=True > "${ms}/compress_after_flagging_col_${time}.log" 2>&1
-        """
+
+        if ( enabled == 1 )
+            """
+            DP3 ${parset} msin=${msin} demix.skymodel=${sourcedb} msout=${msin.getName().replace(".FMS", ".FDMS")} msout.overwrite=true > "${msin}/demix_${time}.log" 2>&1
+            """
+        else
+            """
+            DP3 msin=${msin} steps=[] msout=${msin.getName().replace(".FMS", ".FDMS")} msout.overwrite=true > "${msin}/demix_disabled_${time}.log" 2>&1
+            """
 }
 
 
 
 // process AverageDItoDDMS {
-//     label 'sing'
+//     label 'singDPPP'
 //     publishDir "${params.data.path}", mode: 'move'
 
 //     input:
@@ -630,7 +747,7 @@ process Demix {
 
 
 process Average {
-    label 'sing'
+    label 'singDPPP'
     publishDir params.data.path, mode: 'move'
 
     input:
@@ -652,9 +769,9 @@ process Average {
         """
 }
 
-
+//Also flags intrastation baselines
 process FilterBaselinesAndAverage {
-    label 'sing'
+    label 'singDPPP'
     publishDir params.data.path, mode: 'move'
 
     input:

@@ -51,7 +51,7 @@ def main(args):
         msname = tarball.replace('.MS', f'_{args.label}.MS')
         extract(tarball, msname)
         os.system(f"mv {msname}/{tarball}/* {msname}")
-        os.system(f"rm -r {msname}/{tarball}")
+        # os.system(f"rm -r {msname}/{tarball}")
         logging.info(f"Extracted {tarball} ----> {os.getcwd()}/{msname}")
 
 

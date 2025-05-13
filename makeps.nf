@@ -10,8 +10,8 @@ params.pspipe_dir=null
 params.merge_ms = false
 params.delay_flag = false
 params.ml_gpr = false
+params.ml_gpr_inj = false
 params.vis_flag = false
-params.gpr=false
 params.aoflag_after_merge_ms=false
 params.pslogs=null
 
@@ -22,12 +22,13 @@ params.time_end_index = 0
 workflow {
 
     rev_ch = AddRevision(true, params.obsid, params.data_column, params.datapath, params.pspipe_dir, params.nodes, params.max_concurrent, params.revision, params.merge_ms, params.aoflag_after_merge_ms, params.time_start_index, params.time_end_index)
-    ps_ch = RunPSPIPE(params.pspipe_dir, rev_ch.toml_file, params.obsid, params.msfiles, params.merge_ms, params.delay_flag, params.vis_flag, params.gpr, params.ml_gpr, params.pslogs)
+    ps_ch = RunPSPIPE(params.pspipe_dir, rev_ch.toml_file, params.obsid, params.msfiles, params.merge_ms, params.delay_flag, params.vis_flag, params.ml_gpr, params.ml_gpr_inj, params.pslogs)
 
 }
 
 
 process AddRevision{
+    label 'pspipe'
     publishDir "${ps_dir}"
 
     input:
@@ -54,14 +55,16 @@ process AddRevision{
 
 mkdir -p "!{ps_dir}"
 cd "!{ps_dir}"
-cp "!{projectDir}/configs/pspipe_toml_templates/default.toml" .
-cp "!{projectDir}/configs/pspipe_toml_templates/eor_bins_hba.parset" .
-cp "!{projectDir}/configs/pspipe_toml_templates/ps_config_hba.parset" .
-cp "!{projectDir}/configs/pspipe_toml_templates/flagger.parset" .
+cp "!{projectDir}/configs/pspipe_templates_3C196/default.toml" .
+cp "!{projectDir}/configs/pspipe_templates_3C196/eor_bins_hba.parset" .
+cp "!{projectDir}/configs/pspipe_templates_3C196/ps_config_hba.parset" .
+cp "!{projectDir}/configs/pspipe_templates_3C196/vis_flagger.toml" .
+cp "!{projectDir}/configs/pspipe_templates_3C196/flagger_rb2_test-flag-004-f2_3freqs_3cellsCasA.parset" .
+cp "!{projectDir}/configs/pspipe_templates_3C196/ml_gpr_revised.toml" .
+cp "!{projectDir}/configs/pspipe_templates_3C196/flagger_pre_combine.parset" .
+
 cp "!{projectDir}/configs/pspipe_toml_templates/gpr_config_hba.parset" .
 cp "!{projectDir}/configs/pspipe_toml_templates/gpr_config_v.parset" .
-cp "!{projectDir}/configs/pspipe_toml_templates/gpr_ml_config_2023.parset" .
-cp "!{projectDir}/configs/pspipe_toml_templates/flagger_pre_combine.parset" .
 
 if !{merge_ms}; then
     image_data_col="DATA"
@@ -87,22 +90,27 @@ run_on_file_host_pattern = '\\/net/(node\\d{3})'
 [merge_ms]
 data_col = "!{data_column}"
 apply_aoflagger = ${aoflag[@]}
+[vis_flagger]
+config_file = "!{ps_dir}/vis_flagger.toml"
 [image]
 data_col = "${image_data_col}"
-channels_out = 'every3'
+channels_out = 'every5'
 name="!{revname}"
 time_start_index = !{time_start_index}
 time_end_index = !{time_end_index}
 [power_spectra]
 eor_bin_list = "!{ps_dir}/eor_bins_hba.parset"
 ps_config = "!{ps_dir}/ps_config_hba.parset"
-flagger = "!{ps_dir}/flagger.parset"
+flagger = "!{ps_dir}/flagger_rb2_test-flag-004-f2_3freqs_3cellsCasA.parset"
 [gpr]
+name = ""
+plot_results = true
+use_v_dt_as_noise = false
 config_i = "!{ps_dir}/gpr_config_hba.parset"
 config_v = "!{ps_dir}/gpr_config_v.parset"
 [ml_gpr]
 name = 'eor_vae_2023'
-config = "!{ps_dir}/gpr_ml_config_2023.parset"
+config = "!{ps_dir}/ml_gpr_revised.toml"
 [combine]
 pre_flag = "!{ps_dir}/flagger_pre_combine.parset"
 EOL
@@ -112,6 +120,7 @@ EOL
 
 process RunPSPIPE {
     // debug true
+    label 'pspipe'
 
     input:
     path ps_dir
@@ -121,8 +130,8 @@ process RunPSPIPE {
     val merge_ms
     val delay_flag
     val vis_flag
-    val gpr
     val ml_gpr
+    val ml_gpr_inj
     val pslogs
 
     output:
@@ -143,28 +152,23 @@ process RunPSPIPE {
 
     mkdir -p !{pslogs}
 
-    if !{merge_ms}; then
-        echo "Merging Ms files"
-        if !{delay_flag}; then
-            echo "Using delay flagger"
-            pspipe merge_ms,delay_flagger !{toml_file} !{obsid} > !{pslogs}/ps_ms_merging_with_aoflagger_and_delay_flagger.log 2>&1
-        elif !{vis_flag}; then
-            pspipe merge_ms,vis_flagger !{toml_file} !{obsid} > !{pslogs}/ps_ms_merging_with_aoflagger_and_vis_flagger.log 2>&1
-        else
-            pspipe merge_ms !{toml_file} !{obsid} > !{pslogs}/ps_ms_merging_aoflagger_only.log 2>&1
-        fi
-
-        obs="!{obsid}_flagged"
+    if !{vis_flag}; then
+        echo "Running Visflagger"
+        #pspipe vis_flagger !{toml_file} !{obsid} > !{pslogs}/ps_restore_flag_vis_flagger.log 2>&1
+        pspipe restore_flag !{toml_file} !{obsid} > !{pslogs}/ps_restore_flag.log 2>&1
     fi
-    echo "making image cube"
-    pspipe image,gen_vis_cube !{toml_file} ${obs} > !{pslogs}/ps_image_gen_vis_cube.log 2>&1
+    
+    # echo "making image cube"
+    # pspipe image,gen_vis_cube !{toml_file} ${obs} > !{pslogs}/ps_image_gen_vis_cube.log 2>&1
 
     if !{ml_gpr}; then
         echo "Running foreground subtraction with ML_GPR"
         pspipe run_ml_gpr !{toml_file} ${obs} > !{pslogs}/ps_ml_gpr.log 2>&1
-    elif !{gpr}; then
-        echo "Running foreground subtraction with GPR"
-        pspipe run_gpr !{toml_file} ${obs} > !{pslogs}/ps_gpr.log 2>&1
+
+        if !{ml_gpr_inj}; then
+            echo "Running ML_GPR signal injection"
+            pspipe run_ml_gpr_inj !{toml_file} ${obs} > !{pslogs}/ps_ml_gpr_inj.log 2>&1
+        fi
     else
         echo "GPR foreground subtraction NOT applied"
     fi

@@ -5,6 +5,7 @@ include {
     ClipData;
     FlagStations;
     DP3CalibrateDI;
+    DP3GainCalDI;
     DP3CalibrateDD;
     ApplyGains;
     AOqualityCollect;
@@ -12,10 +13,13 @@ include {
     MakeDP3ClustersListFile;
     SubtractSources;
     WScleanImage;
-    Flag;
+    AOFlag;
+    FlagIntra;
+    UVWFlag;
     Compress;
-    FilterBaselinesAndAverage;
+    FilterInter;
     Average;
+    Demix;
     UnpackMSTarball;
     SplitMSToSubbands;
     ConcatMSesinTime;
@@ -79,6 +83,12 @@ workflow {
 
     }
 
+    if ( params.stage == "PDD" ) {
+
+        PostDD ( params.ch_in  )
+
+    }
+
     if ( params.stage == "WS" ) {
         
         WS ( params.ch_in )
@@ -97,27 +107,29 @@ workflow FCAB {
     main:
 
         mset_ch = channel.fromPath( params.data.ms_files.raw, glob: true, checkIfExists: true, type: 'dir' )
+        flag_intra_ch = FlagIntra ( start_ch, mset_ch )
 
-        // compress_ch = Compress( mset_ch, params.dysco.nbits, params.dysco.normalization, params.dysco.distribution, params.dysco.disttruncation )
-
-        compressed_mset_ch = mset_ch.collect { "${params.data.path}/" + it.getName().replace( '.MS', '.DCMS' ) }
-
-        averaged_msnames_ch = mset_ch.collect { it.getName().replace( "_001", "_002" ) } //"15ch2s", "1ch4s" ) } //TODO: replace thes numbers with label params
+        filter_ch = FilterInter ( flag_intra_ch.collect(), mset_ch )
         
-        all_msets_and_averaged_msnames_ch = compressed_mset_ch.flatten().merge( averaged_msnames_ch.flatten() )
+        filtered_mset_ch = filter_ch.collect { "${params.data.path}/" + it.getName().replace( '.FMS.5ch4s.dppp', '.FMS.5ch4s.dppp' ) } //15ch2s replace!!!!!!!!!!!!!
 
-        FilterBaselinesAndAverage ( true, all_msets_and_averaged_msnames_ch, params.average.lta_to_di.column, params.average.lta_to_di.timestep, params.average.lta_to_di.freqstep ) //compress_ch.collect() @ 1
+        // demix_ch = Demix(params.demix.enabled, filtered_mset_ch.flatten(), params.demix.parset, params.demix.sourcedb)
+        // demixed_mset_ch = filter_ch.collect { "${params.data.path}/" + it.getName().replace( '.FDMS', '.FDMS' ) } //demix_ch.collect
 
-        // averaged_mset_ch = mset_ch.collect { "${params.data.path}/" + it.getName().replace(  "_001", "_002"  ) }
+        flag_ch = AOFlag ( true, filtered_mset_ch.flatten(), params.average.lta_to_di.column, params.average.lta_to_di.aoflagger_strategy, 1 ) //demixed_mset_ch.flatten() @ 2
 
-        // AOqualityCollect( avg_ch.done_averaging.collect(), averaged_mset_ch.flatten(), params.average.lta_to_di.column )
-        
-        // // BackUP ( )
+        averaged_msnames_ch = filter_ch.collect { it.getName().replace( ".FMS.5ch4s.dppp", "_002_3c196.MS" ) } // "_001", "_002" ) } //TODO: replace thes numbers with label params
+        all_msets_and_averaged_msnames_ch = filtered_mset_ch.flatten().merge( averaged_msnames_ch.flatten() ) //demixed_mset_ch.flatten().merge ...
+
+        avg_ch = Average ( flag_ch.collect(), all_msets_and_averaged_msnames_ch, params.average.lta_to_di.column, params.average.lta_to_di.timestep, params.average.lta_to_di.freqstep  )
+
+        flagged_filtered_averaged_mset_ch = mset_ch.collect { "${params.data.path}/" + it.getName().replace(  ".MS.5ch4s.dppp", "_002_3c196.MS"  ) }
+
+        AOqualityCollect( avg_ch.done_averaging.collect(), flagged_filtered_averaged_mset_ch.flatten(), params.average.lta_to_di.column )
 
     emit:
 
-        // AOqualityCollect.out 
-        FilterBaselinesAndAverage.out.done
+        AOqualityCollect.out 
 
 }
 
@@ -131,13 +143,7 @@ workflow DISmooth {
 
         mset_ch = channel.fromPath( params.data.ms_files.di, glob: true, checkIfExists: true, type: 'dir' )
 
-        // scale_ch = ScaleData( mset_ch )
-
-        // clip_ch = ClipData( scale_ch )
-
-        flag_ch = FlagStations( mset_ch ) // TODO: join clipData with this or separate all station flagging from clip data to here
-
-        sols_ch = DP3CalibrateDI( start_ch, flag_ch, params.ddecal.di.parset, params.ddecal.di.sourcedb, params.ddecal.di.sols, params.ddecal.di.incol, params.ddecal.di.solint, params.ddecal.di.uvlambdamin, params.ddecal.di.uvlambdamax, params.ddecal.di.nchan )
+        sols_ch = DP3CalibrateDI( start_ch, mset_ch, params.ddecal.di.parset, params.ddecal.di.sourcedb, params.ddecal.di.sols, params.ddecal.di.incol, params.ddecal.di.solint, params.ddecal.di.uvlambdamin, params.ddecal.di.uvlambdamax, params.ddecal.di.nchan )
 
         all_solutions_ch =  mset_ch.collect { it + "/${params.ddecal.di.sols}" }
 
@@ -211,7 +217,7 @@ workflow DIBandpass {
         // mset_ch = channel.fromPath( params.data.ms_files.bp, glob: true, checkIfExists: true, type: 'dir' )
         mset_ch = channel.fromPath( params.data.ms_files.bp, glob: true, checkIfExists: true, type: 'dir' )
 
-        sols_ch = DP3CalibrateDI( start_ch, mset_ch, params.ddecal.bp.parset, params.ddecal.bp.sourcedb, params.ddecal.bp.sols, params.ddecal.bp.incol, params.ddecal.bp.solint, params.ddecal.bp.uvlambdamin, params.ddecal.bp.uvlambdamax, params.ddecal.bp.nchan )
+        sols_ch = DP3GainCalDI( start_ch, mset_ch, params.ddecal.bp.parset, params.ddecal.bp.sourcedb, params.ddecal.bp.sols, params.ddecal.bp.incol, params.ddecal.bp.solint, params.ddecal.bp.uvlambdamin, params.ddecal.bp.uvlambdamax, params.ddecal.bp.nchan )
 
         all_solutions_ch =  mset_ch.collect { it + "/${params.ddecal.bp.sols}" }
 
@@ -219,15 +225,15 @@ workflow DIBandpass {
 
         apply_gains_ch = ApplyGains ( sols_ch.collect(), mset_and_solutions_ch, params.ddecal.bp.apply.parset, params.ddecal.bp.incol, params.ddecal.bp.outcol )
 
-        apply_elbeam_ch = ApplyBEAM( true, apply_gains_ch, params.ddecal.beam.parset, params.ddecal.bp.outcol, params.ddecal.beam.outcol )
+        flag_ch = AOFlag ( true, apply_gains_ch, params.ddecal.bp.outcol, params.ddecal.bp.aoflagger_strategy, 0 )
 
-        aoq_ch = AOqualityCollect( true, apply_elbeam_ch, params.ddecal.beam.outcol )
+        aoq_ch = AOqualityCollect( flag_ch, apply_gains_ch, params.ddecal.bp.outcol) //params.ddecal.beam.outcol ) // @ 1
     
         im_names_ch =  mset_ch.collect { it.getSimpleName() + "_" + params.wsclean.imname }
 
         mset_and_names_ch = mset_ch.merge( im_names_ch.flatten() )
 
-        WScleanImage ( aoq_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, params.wsclean.chansout_per_subband, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit,  params.ddecal.beam.outcol )
+        WScleanImage ( aoq_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, params.wsclean.chansout_per_subband, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit, params.ddecal.bp.outcol ) //params.ddecal.beam.outcol )
 
     emit:
 
@@ -250,7 +256,7 @@ workflow AVG {
         
         all_msets_and_averaged_msnames_ch = mset_ch.flatten().merge( averaged_msnames_ch.flatten() )
 
-        Average ( true, all_msets_and_averaged_msnames_ch, params.ddecal.beam.outcol, params.average.ditodd.timestep, params.average.ditodd.freqstep )
+        Average ( start_ch, all_msets_and_averaged_msnames_ch, params.ddecal.bp.outcol, params.average.ditodd.timestep, params.average.ditodd.freqstep ) //params.ddecal.beam.outcol
 
     emit:
 
@@ -268,38 +274,53 @@ workflow DD {
         // mset_ch = channel.fromPath( "${params.data.path}/${params.average.ditodd.msout}_T*.MS", glob: true, checkIfExists: true, type: 'dir' )
         mset_ch = channel.fromPath( params.data.ms_files.dd, glob: true, checkIfExists: true, type: 'dir' )
 
-        // // cluster_ch = MakeClusters( source_select_ch, params.number_of_clusters, "l3_ncp_clusters.ao" )
-        // // OR
-        // // add a clustrsfile in the nextflow.config file
-
-        // clip_ch = ClipData( mset_ch )
-
-        calibrate_ch = DP3CalibrateDD( start_ch, mset_ch, params.ddecal.dd.parset, params.ddecal.dd.sourcedb, params.ddecal.dd.sols, params.ddecal.dd.incol, params.ddecal.dd.solint, params.ddecal.dd.uvlambdamin, params.ddecal.dd.uvlambdamax, params.ddecal.dd.nchan ) //clip_ch
+        calibrate_ch = DP3CalibrateDD( start_ch, mset_ch, params.ddecal.dd.parset, params.ddecal.dd.sourcedb, params.ddecal.dd.sols, params.ddecal.dd.incol, params.ddecal.dd.solint, params.ddecal.dd.uvlambdamin, params.ddecal.dd.uvlambdamax, params.ddecal.dd.nchan, params.ddecal.dd.flagstations )
 
         all_solutions_ch =  mset_ch.collect { it + "/${params.ddecal.dd.sols}" }
 
-        mset_and_solutions_ch = mset_ch.merge( all_solutions_ch.flatten() )
-
-        // fit_bpol_ch = FitBpol( calibrate_ch.collect(), mset_and_solutions_ch, params.ddecal.dd.bpol )
-
-        // all_fit_solutions_ch =  mset_ch.collect { it + "/dd_solutions_nosmoothing_degree${params.ddecal.dd.bpol}_bpol.h5" } //TODO: fix this naming to be fullly a param
-
-        // clusters_ch  = MakeDP3ClustersListFile( calibrate_ch.collect(), params.number_of_clusters, "clusters_list.txt" )
-        clusters_ch = channel.of( params.ddecal.dd.subtract.clusters )
-
         mset_and_sourcedb_ch = mset_ch.flatten().combine( channel.of( params.ddecal.dd.sourcedb ) )
 
-        mset_sourcedb_solutions_and_clusters_ch = mset_and_sourcedb_ch.merge( all_solutions_ch.flatten() ).combine( clusters_ch ) // or all_fit_solutions_ch.flatten()
+        mset_sourcedb_solutions_ch = mset_and_sourcedb_ch.merge( all_solutions_ch.flatten() )
 
-        subtract_ncp_ch = SubtractSources ( calibrate_ch.collect(), mset_sourcedb_solutions_and_clusters_ch, params.ddecal.dd.subtract.parset, params.ddecal.dd.incol, params.ddecal.dd.outcol ) //or fit_bpol_ch.collect()at 1
+        subtract_ch = SubtractSources ( calibrate_ch.collect(), mset_sourcedb_solutions_ch, params.ddecal.dd.subtract.parset, params.ddecal.dd.incol, params.ddecal.dd.outcol )
 
-        aoq_ch = AOqualityCollect( true, subtract_ncp_ch, params.ddecal.dd.outcol )
+        aoq_ch = AOqualityCollect( true, subtract_ch, params.ddecal.dd.outcol )
 
         im_names_ch =  mset_ch.collect { it.getSimpleName() + "_" + params.wsclean.imname }
 
         mset_and_names_ch = mset_ch.merge( im_names_ch.flatten() )
 
         WScleanImage ( aoq_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, params.wsclean.chansout_per_timechunk, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit,  params.ddecal.dd.outcol )
+
+    emit:
+
+        WScleanImage.out.done
+
+}
+
+
+workflow PostDD {
+    take:
+        start_ch
+
+    main:
+        mset_ch = channel.fromPath( params.data.ms_files.dd, glob: true, checkIfExists: true, type: 'dir' )
+
+        // flag_intra_ch = FlagIntra ( start_ch, mset_ch )
+
+        aoflagger_ch = AOFlag ( start_ch, mset_ch, params.ddecal.dd.outcol, params.postdd.aoflagger_strategy, 1 )
+
+        uvwflag_ch = UVWFlag (aoflagger_ch.collect(), mset_ch, params.ddecal.dd.outcol, params.postdd.uvlambdamin, params.postdd.uvlambdamax)
+
+        beam_ch = ApplyBEAM( uvwflag_ch.collect(), mset_ch, params.postdd.beam.parset, params.ddecal.dd.outcol, params.postdd.beam.outcol )
+
+        aoq_ch = AOqualityCollect( true, beam_ch, params.postdd.beam.outcol )
+
+        im_names_ch =  mset_ch.collect { it.getSimpleName()  + "_" + params.wsclean.imname }
+
+        mset_and_names_ch = mset_ch.merge( im_names_ch.flatten() )
+
+        WScleanImage ( aoq_ch, mset_and_names_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, params.wsclean.chansout_per_timechunk, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit,  params.postdd.beam.outcol )
 
     emit:
 
@@ -317,11 +338,11 @@ workflow ATEAMS {
         // mset_ch = channel.fromPath( "${params.data.path}/${params.average.ditodd.msout}_T*.MS", glob: true, checkIfExists: true, type: 'dir' )
         mset_ch = channel.fromPath( params.data.ms_files.dd, glob: true, checkIfExists: true, type: 'dir' )
 
-        // flag_ch = Flag (mset_ch, params.ddecal.ateams.outcol)
+        // flag_ch = AOFlag (mset_ch, params.ddecal.ateams.outcol)
 
         clip_ch = ClipData( mset_ch )
 
-        calibrate_ch = DP3CalibrateDD( start_ch, clip_ch, params.ddecal.ateams.parset, params.ddecal.ateams.sourcedb, params.ddecal.ateams.sols, params.ddecal.ateams.incol, params.ddecal.ateams.solint, params.ddecal.dd.uvlambdamin, params.ddecal.dd.uvlambdamax, params.ddecal.dd.nchan )
+        calibrate_ch = DP3CalibrateDD( start_ch, clip_ch, params.ddecal.ateams.parset, params.ddecal.ateams.sourcedb, params.ddecal.ateams.sols, params.ddecal.ateams.incol, params.ddecal.ateams.solint, params.ddecal.dd.uvlambdamin, params.ddecal.dd.uvlambdamax, params.ddecal.dd.nchan, params.ddecal.dd.flagstations )
 
         all_solutions_ch =  mset_ch.collect { it + "/${params.ddecal.ateams.sols}" }
 
@@ -332,9 +353,9 @@ workflow ATEAMS {
 
         mset_sourcedb_solutions_and_clusters_ch = mset_and_sourcedb_ch.merge( all_solutions_ch.flatten() ).combine( clusters_ch )
 
-        subtract_ncp_ch = SubtractSources ( calibrate_ch.collect(), mset_sourcedb_solutions_and_clusters_ch, params.ddecal.ateams.subtract.parset, params.ddecal.ateams.incol, params.ddecal.ateams.outcol )
+        subtract_ch = SubtractSources ( calibrate_ch.collect(), mset_sourcedb_solutions_and_clusters_ch, params.ddecal.ateams.subtract.parset, params.ddecal.ateams.incol, params.ddecal.ateams.outcol )
 
-        aoq_ch = AOqualityCollect( true, subtract_ncp_ch, params.ddecal.ateams.outcol )
+        aoq_ch = AOqualityCollect( true, subtract_ch, params.ddecal.ateams.outcol )
 
         im_names_ch =  mset_ch.collect { it.getSimpleName() + "_" + params.wsclean.imname }
 
