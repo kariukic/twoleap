@@ -14,9 +14,12 @@ import subprocess
 import tarfile
 from glob import glob
 from argparse import ArgumentParser
+
 logging.basicConfig(format="%(levelname)s:%(message)s", level=logging.DEBUG)
 
-parser = ArgumentParser(description="Select subbnads belonging to a given redshift bin, unpack and move them")
+parser = ArgumentParser(
+    description="Select subbnads belonging to a given redshift bin, unpack and move them"
+)
 
 parser.add_argument(
     "-z",
@@ -70,7 +73,7 @@ parser.add_argument(
     "--nfiles_per_worker",
     type=int,
     help="number of files o distribute to each worker node. the master node gets the remainder",
-    required=False
+    required=False,
 )
 
 parser.add_argument(
@@ -78,7 +81,7 @@ parser.add_argument(
     "--mode",
     type=str,
     help="Either move, copy or symlink. Default is move",
-    choices=['move', 'copy', 'symlink'],
+    choices=["move", "copy", "symlink"],
     dest="mode",
     default="mode",
 )
@@ -111,12 +114,12 @@ def getMSlist(fullpath):
 
 
 def readTxt2List(txt_file):
-    with open(txt_file, 'r') as txt:
+    with open(txt_file, "r") as txt:
         return txt.readlines()
 
 
 def getMsSubband(mspath):
-    return re.findall(r'SB\d+', mspath)[0][2:]
+    return re.findall(r"SB\d+", mspath)[0][2:]
 
 
 def missingSubbands(subbands):
@@ -129,15 +132,17 @@ def missingSubbands(subbands):
 
 
 def parseNodes(nodes):
-    if '..' in nodes[0]:
-        min_node = int(nodes[0].split('..')[0])
-        max_node = int(nodes[0].split('..')[1])
+    if ".." in nodes[0]:
+        min_node = int(nodes[0].split("..")[0])
+        max_node = int(nodes[0].split("..")[1])
         return list(range(min_node, max_node + 1))
+    elif "," in nodes[0]:
+        return [int(n) for n in nodes[0].split(",")]
     else:
         return nodes
 
 
-def chunks(lst:list, n:int):
+def chunks(lst: list, n: int):
     """
     Yield successive n-sized chunks from a list.
 
@@ -161,7 +166,15 @@ def chunks(lst:list, n:int):
         yield lst[i : i + n]
 
 
-def distributeMSets(files, to_nodes, directory_B, nfiles_per_worker, dry_run=True, mode='move', label=None):
+def distributeMSets(
+    files,
+    to_nodes,
+    directory_B,
+    nfiles_per_worker,
+    dry_run=True,
+    mode="move",
+    label=None,
+):
     files_per_node = list(chunks(files, nfiles_per_worker))
 
     logging.info(to_nodes)
@@ -180,45 +193,53 @@ def distributeMSets(files, to_nodes, directory_B, nfiles_per_worker, dry_run=Tru
 
         for fyl in files_chunk:
 
-            if os.path.isfile(fyl):
-                try:
-                    assert label, "label must be given"
-                    msname = fyl.replace('.MS', f'_{label}.MS')
-                    extract(fyl, msname)
-                    os.system(f"mv {msname}/{fyl}/* {msname}")
-                    # os.system(f"rm -r {msname}/{tarball}")
-                    logging.info(f"Extracted {fyl} ----> {os.getcwd()}/{msname}")
+            # if os.path.isfile(fyl):
+                # try:
+                #     assert label, "label must be given"
+                #     msname = fyl.replace(".MS", f"_{label}.MS")
+                #     if not dry_run:
+                #         extract(fyl, msname)
+                #         # os.system(f"mv {msname}/{fyl}/* {msname}")
+                #     logging.info(f"Moving {msname}/{fyl}/* ----> {msname}")
+                #     logging.info(f"Extracted {fyl} ----> {msname}")
 
-                except:
-                    logging.error
+                # except Exception as e:
+                #     logging.error(f"Could not extract {fyl}: {e}")
 
-                fyl = msname
+                # fyl = msname
 
-            symlink_name = os.path.basename(fyl).replace('.MS', f'_{label}.MS') if label else os.path.basename(fyl)
+            symlink_name = (
+                os.path.basename(fyl).replace(".MS", f"_{label}.MS")
+                if label
+                else os.path.basename(fyl)
+            )
 
-            if mode == 'copy':
+            if mode == "copy":
                 cmd = f"ssh node{nodeB} 'scp -r {fyl} {datadirB}/{symlink_name}'"
 
-            elif mode == 'symlink':
+            elif mode == "symlink":
                 cmd = f"ssh node{nodeB} 'ln -s {fyl} {datadirB}/{symlink_name}'"
 
-            elif mode == 'move':
+            elif mode == "move":
                 cmd = f"ssh node{nodeB} 'mv -f {fyl} {datadirB}/{symlink_name}'"
 
             logging.info(f"running {mode}: {cmd}")
             if not dry_run:
-                subprocess.run(cmd, shell=True)
+                if not os.path.exists(f"/net/node{nodeB}/{datadirB}/{symlink_name}"):
+                    subprocess.run(cmd, shell=True)
+                else:
+                    logging.info(
+                        f"File /net/node{nodeB}/{datadirB}/{symlink_name} exists already. Skipping."
+                    )
 
 
 def main(args):
-    subbands_per_redshift_bin = {
-        '1' : [],
-        '2' : list(range(98, 165)),
-        '3' : []
-    }
+    subbands_per_redshift_bin = {"1": [], "2": list(range(98, 165)), "3": list(range(33, 101)), "4": list(range(14, 278))}
 
     redshift_bin_subbands = subbands_per_redshift_bin[str(args.zbin)]
-    logging.info(f"{len(redshift_bin_subbands)} Redshift bin sbands: {redshift_bin_subbands}")
+    logging.info(
+        f"{len(redshift_bin_subbands)} Redshift bin sbands: {redshift_bin_subbands}"
+    )
 
     nodes = parseNodes(args.nodes)
     logging.debug(f"Nodes: {nodes}")
@@ -231,6 +252,8 @@ def main(args):
 
     logging.info(f"All MSes found: {len(mses)}")
 
+    #Make sure the mses found to belong the the redshift bin com out sorted
+    mses = sorted(mses, key=lambda x: int(getMsSubband(x)))
     red_mses = [ms for ms in mses if int(getMsSubband(ms)) in redshift_bin_subbands]
     assert len(red_mses) > 0, "No msfiles found for that redshift bin."
 
@@ -250,11 +273,23 @@ def main(args):
         logging.info("0 missing subbands")
 
     if args.directory_B:
-        assert args.to_nodes, "Provided directory_B but no to_nodes. to_nodes is needed to redistributed data"
-        assert args.nfiles_per_worker, "nfiles_per_worker is needed to redistributed data"
+        assert (
+            args.to_nodes
+        ), "Provided directory_B but no to_nodes. to_nodes is needed to redistributed data"
+        assert (
+            args.nfiles_per_worker
+        ), "nfiles_per_worker is needed to redistributed data"
 
         to_nodes = parseNodes(args.to_nodes)
-        distributeMSets(red_mses, to_nodes, args.directory_B, args.nfiles_per_worker, dry_run=args.dry_run, mode=args.mode, label=args.label)
+        distributeMSets(
+            red_mses,
+            to_nodes,
+            args.directory_B,
+            args.nfiles_per_worker,
+            dry_run=args.dry_run,
+            mode=args.mode,
+            label=args.label,
+        )
 
 
 if __name__ == "__main__":

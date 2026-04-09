@@ -13,6 +13,7 @@ include {
     readTxtIntoString;
     readTxtAndAppendString;
     GetTimeChunksPerSubband;
+    GetData;
 } from "./processes.nf"
 
 
@@ -21,190 +22,80 @@ include {
     RunPSPIPE
 } from "./makeps.nf"
 
+// Helper function to check if step should run
+def shouldRun( step ) { 
 
-workflow FullPipeline {
-    ext_ch = EXTRACT( true )
-    pre_process_ch = PreProcess ( ext_ch )
+    // Define execution order
+    def steps = [
+        'untar_ms',
+        'preprocess', 
+        'make_di_ms',
+        'di_cal',
+        'split_freq',
+        'concat_time',
+        'bp_cal',
+        'average',
+        'make_dd_ms',
+        'dd_cal',
+        'postdd',
+        'pspec',
+        'image'
+    ]
 
-    split_ch1 = MakeFullBandDITimeChunks( pre_process_ch )
-    di_ch = RunDISmooth ( split_ch1 )
+    if (!steps.contains(params.start_at)) {
+        error "Invalid starting step.\n start_at: ${params.start_at}.\n Valid steps: ${steps}"
+    }
+    
+    if (!steps.contains(params.stop_at)) {
+        error "Invalid stopping step.\n stop_at: ${params.stop_at}.\n Valid steps: ${steps}."
+    }
 
-    sbs_ch = SplitMSChannels( di_ch )   
-    sbs_ch2 = ConcatTimeChunks( sbs_ch )
-    bp_ch = RunDIBandpass( sbs_ch2 )
+    int startIdx = steps.indexOf(params.start_at)
+    int stopIdx = steps.indexOf(params.stop_at)
+    int stepIdx = steps.indexOf(step)
 
-    avg_ch = Average ( bp_ch )
-    split_ch2 = MakeFullBandDDTimeChunks( avg_ch )
-    dd_ch = Run_DD ( split_ch2 )
-    pdd_ch = Run_PostDD ( dd_ch )
-    ps_ch = PowerSpectrum( pdd_ch )
-    fi_ch = FinalImages( ps_ch )
+    if (startIdx > stopIdx) {
+        error "start_at ('${params.start_at}') must come before stop_at ('${params.stop_at}') in pipeline sequence:\n ${steps}"
+    }
+
+    stepIdx >= startIdx && stepIdx <= stopIdx
 }
+
 
 workflow {
+    ext_ch = shouldRun('untar_ms') ? EXTRACT(true) : true
 
-    validStartPoints = ['extract', 'pre_process', 'dismooth', 'splitms', 'bandpass', 'average', 'dd', 'postdd', 'powerspec', 'finalimages']
+    pre_process_ch = shouldRun('preprocess') ? PreProcess(ext_ch) : true
 
-    // Validate the starting point parameter
-    if (!(params.startFrom in validStartPoints)) {
-        exit 1, "Invalid start point '${params.startFrom}'. Valid options: ${validStartPoints.join(', ')}"
-    }
+    split_ch1 = shouldRun('make_di_ms') ? MakeFullBandDITimeChunks(pre_process_ch) : true
 
-    // Define the workflow segments with conditional execution
-    if (params.startFrom == 'extract') {
-        ext_ch = EXTRACT(true)
-    }
-    
-    if (params.startFrom == 'extract' || params.startFrom == 'pre_process') {
-        pre_process_ch = params.startFrom == 'extract' ? PreProcess(ext_ch) : PreProcess(true)
-    }
-    
-    if (params.startFrom == 'extract' || params.startFrom == 'pre_process' || params.startFrom == 'dismooth') {
-        split_ch1 = params.startFrom in ['extract', 'pre_process'] ? 
-                   MakeFullBandDITimeChunks(pre_process_ch) : 
-                   MakeFullBandDITimeChunks(true)
-        di_ch = RunDISmooth(split_ch1)
-    }
-    
-    if (params.startFrom in ['extract', 'pre_process', 'dismooth', 'splitms']) {
-        sbs_ch = params.startFrom in ['extract', 'pre_process', 'dismooth'] ? 
-                SplitMSChannels(di_ch) : 
-                SplitMSChannels(true)
-        sbs_ch2 = ConcatTimeChunks(sbs_ch)
-    }
-    
-    if (params.startFrom in ['extract', 'pre_process', 'dismooth', 'splitms', 'bandpass']) {
-        bp_ch = params.startFrom in ['extract', 'pre_process', 'dismooth', 'splitms'] ? 
-               RunDIBandpass(sbs_ch2) : 
-               RunDIBandpass(true)
-    }
-    
-    if (params.startFrom in ['extract', 'pre_process', 'dismooth', 'splitms', 'bandpass', 'average']) {
-        avg_ch = params.startFrom in ['extract', 'pre_process', 'dismooth', 'splitms', 'bandpass'] ? 
-                Average(bp_ch) : 
-                Average(true)
-    }
-    
-    if (params.startFrom in ['extract', 'pre_process', 'dismooth', 'splitms', 'bandpass', 'average', 'dd']) {
-        split_ch2 = params.startFrom in ['extract', 'pre_process', 'dismooth', 'splitms', 'bandpass', 'average'] ? 
-                   MakeFullBandDDTimeChunks(avg_ch) : 
-                   MakeFullBandDDTimeChunks(true)
-        dd_ch = Run_DD(split_ch2)
-    }
-    
-    if (params.startFrom in ['extract', 'pre_process', 'dismooth', 'splitms', 'bandpass', 'average', 'dd', 'postdd']) {
-        pdd_ch = params.startFrom in ['extract', 'pre_process', 'dismooth', 'splitms', 'bandpass', 'average', 'dd'] ? 
-                Run_PostDD(dd_ch) : 
-                Run_PostDD(true)
-    }
-    
-    if (params.startFrom in ['extract', 'pre_process', 'dismooth', 'splitms', 'bandpass', 'average', 'dd', 'postdd', 'powerspec']) {
-        ps_ch = params.startFrom in ['extract', 'pre_process', 'dismooth', 'splitms', 'bandpass', 'average', 'dd', 'postdd'] ? 
-               PowerSpectrum(pdd_ch) : 
-               PowerSpectrum(true)
-    }
-    
-    // if (params.startFrom in ['extract', 'pre_process', 'dismooth', 'splitms', 'bandpass', 'average', 'dd', 'postdd', 'powerspec', 'finalimages']) {
-    //     fi_ch = params.startFrom in ['extract', 'pre_process', 'dismooth', 'splitms', 'bandpass', 'average', 'dd', 'postdd', 'powerspec'] ? 
-    //            FinalImages(ps_ch) : 
-    //            FinalImages(true)
-    // }
+    di_ch = shouldRun('di_cal') ? RunDISmooth(split_ch1) : true
+
+    sbs_ch = shouldRun('split_freq') ? SplitMSChannels(di_ch) : true
+
+    sbs_ch2 = shouldRun('concat_time') ? ConcatTimeChunks(sbs_ch) : true
+
+    bp_ch = shouldRun('bp_cal') ? RunDIBandpass(sbs_ch2) : true
+
+    avg_ch = shouldRun('average') ? Average(bp_ch) : true
+
+    split_ch2 = shouldRun('make_dd_ms') ? MakeFullBandDDTimeChunks(avg_ch) : true
+
+    dd_ch = shouldRun('dd_cal') ? Run_DD(split_ch2) : true
+
+    pdd_ch = shouldRun('postdd') ? Run_PostDD(dd_ch) : true
+
+    ps_ch = shouldRun('pspec') ? PowerSpectrum(pdd_ch) : true
+
+    shouldRun('image') ? Image(ps_ch) : null
 }
-
-
-// workflow {
-
-//     validSteps = [
-//         'extract', 
-//         'pre_process', 
-//         'dismooth', 
-//         'splitms', 
-//         'bandpass',
-//         'average', 
-//         'dd', 
-//         'postdd', 
-//         'powerspec', 
-//         'finalimages'
-//     ]
-
-//     // Validate parameters
-//     if (!(params.startFrom in validSteps)) {
-//         exit 1, "Invalid start point '${params.startFrom}'. Valid options: ${validSteps.join(', ')}"
-//     }
-//     if (!(params.stopAfter in validSteps)) {
-//         exit 1, "Invalid stop point '${params.stopAfter}'. Valid options: ${validSteps.join(', ')}"
-//     }
-//     if (validSteps.indexOf(params.startFrom) > validSteps.indexOf(params.stopAfter)) {
-//         exit 1, "Start point '${params.startFrom}' cannot be after stop point '${params.stopAfter}'"
-//     }
-
-//     // Helper function to check if step should run
-//     def shouldRun = { step ->
-//         def stepIdx = validSteps.indexOf(step)
-//         def startIdx = validSteps.indexOf(params.startFrom)
-//         def stopIdx = validSteps.indexOf(params.stopAfter)
-//         return (stepIdx >= startIdx && stepIdx <= stopIdx)
-//     }
-
-//     // Helper function to get input for a step
-//     def getInput = { step, normalInput ->
-//         return shouldRun(step) && validSteps.indexOf(step) > validSteps.indexOf(params.startFrom) ? 
-//                normalInput : 
-//                true
-//     }
-
-//     // Workflow steps
-//     if (shouldRun('extract')) {
-//         ext_ch = EXTRACT(true)
-//     }
-    
-//     if (shouldRun('pre_process')) {
-//         pre_process_ch = getInput('pre_process', ext_ch) | PreProcess
-//     }
-    
-//     if (shouldRun('dismooth')) {
-//         split_ch1 = getInput('dismooth', pre_process_ch) | MakeFullBandDITimeChunks
-//         di_ch = RunDISmooth(split_ch1)
-//     }
-    
-//     if (shouldRun('splitms')) {
-//         sbs_ch = getInput('splitms', di_ch) | SplitMSChannels
-//         sbs_ch2 = ConcatTimeChunks(sbs_ch)
-//     }
-    
-//     if (shouldRun('bandpass')) {
-//         bp_ch = getInput('bandpass', sbs_ch2) | RunDIBandpass
-//     }
-    
-//     if (shouldRun('average')) {
-//         avg_ch = getInput('average', bp_ch) | Average
-//     }
-    
-//     if (shouldRun('dd')) {
-//         split_ch2 = getInput('dd', avg_ch) | MakeFullBandDDTimeChunks
-//         dd_ch = Run_DD(split_ch2)
-//     }
-    
-//     if (shouldRun('postdd')) {
-//         pdd_ch = getInput('postdd', dd_ch) | Run_PostDD
-//     }
-    
-//     if (shouldRun('powerspec')) {
-//         ps_ch = getInput('powerspec', pdd_ch) | PowerSpectrum
-//     }
-    
-//     if (shouldRun('finalimages')) {
-//         fi_ch = getInput('finalimages', ps_ch) | FinalImages
-//     }
-// }
-
 
 
 workflow ExtractDATA {
     EXTRACT( true )
 }
 
-// import groovy.json.JsonOutput
+
 process InitParams {
     debug true
     publishDir params.out.logs, mode: 'copy'
@@ -220,10 +111,10 @@ process InitParams {
     script:
         makeDirectory( params.out.logs )
 
-        def tasks_after_split = [ "DI", "DD", "PDD", "AT", "SB" ] //, "AVG"
+        def tasks_after_split = [ "DI", "DD", "PDD", "SB" ] //, "AVG"
 
          if ( tasks_after_split.contains( stage ) ){
-            nodes_list  = parseNodes( params.split.nodes )
+            nodes_list  = parseNodes( params.ssplit.nodes )
          }
 
         else {
@@ -252,6 +143,7 @@ process Distribute {
 
     script:
         """
+        mkdir -p ${params.out.logs}
         pssh -v -i -h ${launchDir}/${params.data.hosts} -t 0 -x "cd ${params.data.path}; bash" /home/codex/chege/software/nextflow run ${params.stagelib} --stage ${entry} --ch_in ${ch_in} -params-file ${params_file}  -with-singularity ${params.image} --singularity_bind_path ${params.binds} > ${params.out.logs}/${entry}.log 2>&1
         """
 }
@@ -269,19 +161,16 @@ workflow PreProcess {
 
         cal_ch = Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
 
-        // nodesList = params.data.nodes?.split(',') as List
-        // nodes_ch = channel.fromList( nodesList ).collect {it}    
-        // mslist_ch = WriteMSlist( cal_ch, nodes_ch, params.data.ms_files.raw, params.data.raw_mslist )
-        // output_mslist = file(params.out.logs).resolve( params.data.raw_mslist )
-        // mses_ch = WriteMSlist( cal_ch, nodes_ch, "${params.data.ms_files.raw}".replace( "_001", "_002" ), "di_subbands.txt" )
+        nodesList = params.data.nodes?.split(',') as List
+        nodes_ch = channel.fromList( nodesList ).collect {it}   
 
-        mses = readTxtIntoString ( params.data.raw_mslist )
+        mslist_ch = WriteMSlist( cal_ch, nodes_ch, "${params.data.path}/*.noInter.flagged.di_averaged", params.data.di_mslist ) 
 
-        AOqualityCombine( cal_ch, mses, "aoqstats_raw" )
+        AOqualityCombine( cal_ch, mslist_ch.per_line_mslist, "raw_aoq_stats_averaged" ) //raw_aoq_stats !!!!!!!!!!!!!!!!!!!!!!
 
     emit:
 
-        AOqualityCombine.out.qstats
+        AOqualityCombine.out.done
 
 }
 
@@ -292,14 +181,22 @@ workflow MakeFullBandDITimeChunks {
         ready
     
     main:
-        mses = readTxtIntoString ( params.data.di_mslist ) //TODO: check this mslist
 
-        nodesList = params.split.nodes?.split(',') as List
+        def mslist_file = file(params.data.di_mslist)
+        if (mslist_file.exists()) {
+            mses = Channel.value(mslist_file).splitText().map { file(it.trim()) }.collect().map{ it.join(' ') }
+        } else {
+            nodesList = params.data.nodes?.split(',') as List
+            nodes_ch = channel.fromList( nodesList ).collect {it}    
+            mses = WriteMSlist( ready, nodes_ch, "${params.data.path}/*noInter.flagged.di_averaged", params.data.di_mslist ).per_line_mslist.splitText().map { file(it.trim()) }.collect().map{ it.join(' ') }
+        }
+
+        nodesList = params.ssplit.nodes?.split(',') as List
         nodes_ch = channel.fromList( nodesList ).collect {it}
 
-        output_mslist = file(params.out.logs).resolve( "di_mses.txt" )
+        output_mslist = file(params.out.logs).resolve( params.data.di_mslist )
 
-        MergeChansSplitTime ( ready, mses, nodes_ch, params.split.di.ntimes, params.ddecal.di.incol, params.split.di.ms_prefix, params.split.di.mses_per_node, output_mslist )
+        MergeChansSplitTime ( ready, mses, nodes_ch, params.ssplit.di.ntimes, params.ddecal.di.incol, params.data.di_ms_glob.replace('_T???', '.MS'), params.ssplit.di.mses_per_node, output_mslist ) //"fullband_di_smooth_data.MS"
         
     emit:
 
@@ -322,18 +219,23 @@ workflow RunDISmooth {
 
         cal_ch = Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
 
-        mses_sols_ch = ReadTxtLinesandAppend( cal_ch, params.out.logs, "di_mses.txt", "/${params.ddecal.di.sols}" )
+        mses_sols_ch = ReadTxtLinesandAppend( cal_ch, params.out.logs, params.data.di_mslist, "/${params.ddecal.di.sols}" )
 
-        AOqualityCombine( cal_ch, mses_sols_ch.list_str, "aoqstats_di_smooth" ) //aoq_comb_ch
+        sols_collect_ch = H5ParmCollect( cal_ch, mses_sols_ch.list_postfix_str, "di_smooth_solutions")
 
-        // mses_and_imname_ch = mses_sols_ch.list_str.combine( channel.of( "di_smooth_corrected" ) )
+        aoq_comb_ch = AOqualityCombine( sols_collect_ch.done , "${params.out.logs}/${params.data.di_mslist}", "di_smooth_aoq_stats" ) //
 
-        // WScleanImage ( aoq_comb_ch.qstats.collect(), mses_and_imname_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, params.wsclean.chansout, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit, params.ddecal.di.outcol )
+        ps_dir = "${params.data.path}/${params.out.results}/${params.pspipe.dir}/di_smooth"
+        ps_logs_dir = "${params.out.logs}/power_spectrum/di"
+
+        rev_ch = AddRevision( aoq_comb_ch.done, params.pspipe.obsid, params.ddecal.di.outcol, params.data.path, ps_dir, params.pspipe.node, params.pspipe.max_concurrent, params.pspipe.revision, params.pspipe.merge_ms, params.pspipe.aoflag_after_merge_ms, params.pspipe.time_start_index,  params.pspipe.time_end_index  )
+
+        RunPSPIPE( ps_dir, rev_ch.toml_file, params.pspipe.obsid, "${params.out.logs}/${params.data.di_mslist}.ps", params.pspipe.merge_ms, params.pspipe.delay_flagger, params.pspipe.vis_flagger, params.pspipe.ml_gpr, params.pspipe.ml_gpr_inj, ps_logs_dir )
 
     emit:
-
-        // WScleanImage.out.done
-        AOqualityCombine.out.qstats
+        RunPSPIPE.out.ready
+        // H5ParmCollect.out.done
+        // AOqualityCombine.out.done
 
 }
 
@@ -368,13 +270,13 @@ workflow ConcatTimeChunks {
 
         stage_params_ch = InitParams( ready,  stage_ch )
 
-        from_nodes_list = params.split.nodes?.split(',') as List
+        from_nodes_list = params.ssplit.nodes?.split(',') as List
         from_nodes_ch = channel.fromList( from_nodes_list ).collect {it}
 
         to_nodes_list = params.data.nodes?.split(',') as List
         to_nodes_ch = channel.fromList( to_nodes_list ).collect {it}
 
-        per_sb_chunks_ch = GetTimeChunksPerSubband( stage_params_ch.params_standby, params.split.di.ms_prefix, params.data.bp_subbands_per_node, from_nodes_ch, to_nodes_ch)
+        per_sb_chunks_ch = GetTimeChunksPerSubband( stage_params_ch.params_standby, params.data.di_ms_glob.replace('_T???.MS', ''), params.data.bp_subbands_per_node, from_nodes_ch, to_nodes_ch) // "fullband_di_smooth_data" 
 
         Distribute ( stage_params_ch.params_standby, per_sb_chunks_ch, stage_ch, stage_params_ch.params_file )
 
@@ -382,7 +284,6 @@ workflow ConcatTimeChunks {
         Distribute.out
 
 }
-
 
 
 workflow RunDIBandpass {
@@ -401,19 +302,27 @@ workflow RunDIBandpass {
 
         nodesList = params.data.nodes?.split(',') as List
         nodes_ch = channel.fromList( nodesList ).collect {it}
-        mses_ch = WriteMSlist( cal_ch, nodes_ch, params.data.ms_files.bp, "di_bandpass_subbands_mslist.txt")
+        mses_ch = WriteMSlist( cal_ch, nodes_ch, "${params.data.path}/${params.data.bp_ms_glob}", params.data.bp_mslist)
 
-        mses_sols_ch = ReadTxtLinesandAppend( mses_ch.per_line_mslist, params.out.logs, "di_bandpass_subbands_mslist.txt", "/${params.ddecal.bp.sols}" )
+        mses_sols_ch = ReadTxtLinesandAppend( mses_ch.per_line_mslist, params.out.logs, params.data.bp_mslist, "/${params.ddecal.bp.sols}" )
 
-        aoq_comb_ch = AOqualityCombine( true, mses_sols_ch.list_str, "aoqstats_di_bandpass" ) 
+        sols_collect_ch = H5ParmCollect( cal_ch, mses_sols_ch.list_postfix_str, "di_bandpass_solutions")
 
-        mses_and_imname_ch = mses_sols_ch.list_str.combine( channel.of ( "di_bandpass_corrected" ) )
+        aoq_comb_ch = AOqualityCombine(sols_collect_ch.done, mses_ch.per_line_mslist, "di_bandpass_aoq_stats" )
 
-        WScleanImage ( aoq_comb_ch.qstats.collect(), mses_and_imname_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, params.wsclean.chansout, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit, params.ddecal.bp.outcol )
+        ps_dir = "/net/${params.master_node}/${params.data.path}/${params.out.results}/${params.pspipe.dir}/di_bandpass"
+
+        rev_ch = AddRevision( aoq_comb_ch.done, params.pspipe.obsid, params.ddecal.bp.outcol, params.data.path, ps_dir, params.master_node, params.pspipe.max_concurrent, params.pspipe.revision, params.pspipe.merge_ms, params.pspipe.aoflag_after_merge_ms, 0, 0 )
+
+        RunPSPIPE( ps_dir, rev_ch.toml_file, params.pspipe.obsid, "${params.out.logs}/${params.data.bp_mslist}", params.pspipe.merge_ms, params.pspipe.delay_flagger, params.pspipe.vis_flagger, params.pspipe.ml_gpr, params.pspipe.ml_gpr_inj, params.out.logs ) //ps_ch = 
+
+        // mses_and_imname_ch = mses_sols_ch.list_str.combine( channel.of ( "di_bandpass_corrected" ) )
+
+        // WScleanImage ( ps_ch.ready, mses_and_imname_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, params.wsclean.chansout, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit, params.ddecal.bp.outcol )
 
     emit:
-
-        WScleanImage.out.done
+        RunPSPIPE.out.ready
+        // WScleanImage.out.done
 }
 
 
@@ -431,8 +340,8 @@ workflow Average {
 
         nodesList = params.data.nodes?.split(',') as List
         nodes_ch = channel.fromList( nodesList ).collect {it}
-
-        WriteMSlist( avg_ch, nodes_ch, "${params.data.ms_files.bp}".replace( "_002", "_003" ), "dd_subband_mslist.txt" )
+        
+        WriteMSlist( avg_ch, nodes_ch, "${params.data.path}/${params.data.bp_ms_glob}.dd_averaged", params.data.dd_sb_mslist )
 
     emit:
 
@@ -447,14 +356,14 @@ workflow MakeFullBandDDTimeChunks {
     
     main:
 
-        mses_ch = ReadTxtLinesandAppend( ready, params.out.logs, "dd_subband_mslist.txt", "/nan" )
+        mses_ch = ReadTxtLinesandAppend( ready, params.out.logs, params.data.dd_sb_mslist, "/nan" )
 
-        nodesList = params.split.nodes?.split(',') as List
+        nodesList = params.ssplit.nodes?.split(',') as List
         nodes_ch = channel.fromList( nodesList ).collect {it}
 
-        output_mslist = file(params.out.logs).resolve( "dd_fullband_time_chunks_mslist.txt" )
+        output_mslist = file(params.out.logs).resolve( params.data.dd_mslist )
 
-        MergeChansSplitTime ( true, mses_ch.list_str, nodes_ch, params.split.dd.ntimes, 'DATA', params.split.dd.ms_prefix, params.split.dd.mses_per_node, output_mslist )
+        MergeChansSplitTime ( ready, mses_ch.list_str, nodes_ch, params.ssplit.dd.ntimes, 'DATA', params.data.dd_ms_glob.replace('_T???.MS', '.MS'), params.ssplit.dd.mses_per_node, output_mslist ) //"fullband_dd_smooth_data.MS"
         
     emit:
 
@@ -476,12 +385,26 @@ workflow Run_DD {
 
         cal_ch = Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
 
-        mses_sols_ch = ReadTxtLinesandAppend( cal_ch, params.out.logs, "dd_fullband_time_chunks_mslist.txt", "/${params.ddecal.dd.sols}" )
+        mses_sols_ch = ReadTxtLinesandAppend( cal_ch, params.out.logs, params.data.dd_mslist, "/${params.ddecal.dd.sols}" )
 
-        AOqualityCombine( true, mses_sols_ch.list_str, "aoqstats_dd" )
+        sols_collect_ch = H5ParmCollect( cal_ch, mses_sols_ch.list_postfix_str, "dd_smooth_solutions")
+
+        aoq_comb_ch = AOqualityCombine( sols_collect_ch.done, "${params.out.logs}/${params.data.dd_mslist}", "dd_smooth_aoq_stats" )
+
+        ps_dir = "/net/${params.master_node}/${params.data.path}/${params.out.results}/${params.pspipe.dir}/dd_smooth"
+
+        rev_ch = AddRevision( aoq_comb_ch.done, params.pspipe.obsid, params.ddecal.dd.outcol, params.data.path, ps_dir, params.master_node, params.pspipe.max_concurrent, params.pspipe.revision, params.pspipe.merge_ms, params.pspipe.aoflag_after_merge_ms, 0, 0 )
+
+        RunPSPIPE( ps_dir, rev_ch.toml_file, params.pspipe.obsid, "${params.out.logs}/${params.data.dd_mslist}.ps", params.pspipe.merge_ms, params.pspipe.delay_flagger, params.pspipe.vis_flagger, params.pspipe.ml_gpr, params.pspipe.ml_gpr_inj, params.out.logs ) //ps_ch = 
+
+        // mses_and_imname_ch = mses_sols_ch.list_str.combine( channel.of ( "dd_smooth_corrected" ) )
+
+        // WScleanImage ( ps_ch.ready, mses_and_imname_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, params.wsclean.chansout, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit, params.ddecal.dd.outcol )
+
     emit:
-
-        AOqualityCombine.out.qstats
+        // AOqualityCombine.out.done
+        // WScleanImage.out.done
+        RunPSPIPE.out.ready
 }
 
 
@@ -496,35 +419,40 @@ workflow Run_PostDD {
 
         cal_ch = Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
 
-        mses_sols_ch = ReadTxtLinesandAppend( cal_ch, params.out.logs, "dd_fullband_time_chunks_mslist.txt", "/nan" )
+        nodesList = params.data.nodes?.split(',') as List
+        nodes_ch = channel.fromList( nodesList ).collect {it}
+        mses_ch = WriteMSlist( cal_ch, nodes_ch, "${params.data.path}/${params.data.dd_ms_glob}.l${params.postdd.uvlambdamin}to${params.postdd.uvlambdamax}", params.data.pdd_mslist)
 
-        AOqualityCombine( true, mses_sols_ch.list_str, "aoqstats_postdd" )
-
+        AOqualityCombine( ready, mses_ch.per_line_mslist, "pdd_smooth_aoq_stats" )
 
     emit:
-
-        AOqualityCombine.out.qstats
+        // WriteMSlist.out.single_line_mslist
+        AOqualityCombine.out.done
+        
 }
 
 
-// Add this step after DI, BP and DD
 workflow PowerSpectrum {
     take:
         ready
 
     main:
+        // def mslist_file = file("${params.out.logs}/${params.data.pdd_mslist}")
+        // if (mslist_file.exists()) {
+        //     mses_ch = channel.fromPath( "${params.out.logs}/${params.data.pdd_mslist}", checkIfExists: true, type: 'file' )
+        // } else {
+        //     nodesList = params.data.nodes?.split(',') as List
+        //     nodes_ch = channel.fromList( nodesList ).collect { it }
+        //     mses_ch = WriteMSlist( ready, nodes_ch, "${params.data.path}/${params.data.dd_ms_glob}.l${params.postdd.uvlambdamin}to${params.postdd.uvlambdamax}", params.data.pdd_mslist).per_line_mslist
+        // }
 
-        nodesList = params.split.nodes?.split(',') as List
-        nodes_ch = channel.fromList( nodesList ).collect {it}
-        mses_ch = WriteMSlist( ready, nodes_ch, params.data.ms_files.dd, "dd_fullband_time_chunks_mslist.txt" )
+        // aoq_comb_ch = AOqualityCombine( ready, mses_ch, "pdd_smooth_aoq_stats" )
 
-        ps_dir = "/net/${params.master_node}/${params.data.path}/${params.out.results}/${params.pspipe.dir}"
+        ps_dir = "/net/${params.master_node}/${params.data.path}/${params.out.results}/${params.pspipe.dir}/post_dd"
 
-        rev_ch = AddRevision( mses_ch.single_line_mslist, params.data.obsID, params.postdd.beam.outcol, params.data.path, ps_dir, params.master_node, params.pspipe.max_concurrent, params.pspipe.revision, params.pspipe.merge_ms, params.pspipe.aoflag_after_merge_ms, 0, 0 )
+        rev_ch = AddRevision( ready, params.pspipe.obsid, 'DATA', params.data.path, ps_dir, params.master_node, params.pspipe.max_concurrent, params.pspipe.revision, params.pspipe.merge_ms, params.pspipe.aoflag_after_merge_ms, 0, 0 )
 
-        RunPSPIPE( ps_dir, rev_ch.toml_file, params.data.obsID, "${params.out.logs}/dd_fullband_time_chunks_mslist.txt.ps_high_el", params.pspipe.merge_ms, params.pspipe.delay_flagger, params.pspipe.vis_flagger, params.pspipe.ml_gpr, params.pspipe.ml_gpr_inj, params.out.logs )
-
-        // RunPSPIPE( ps_dir, rev_ch.toml_file, params.data.obsID, "${params.out.logs}/dd_fullband_time_chunks_mslist.txt.ps", params.pspipe.merge_ms, params.pspipe.delay_flagger, params.pspipe.vis_flagger, params.pspipe.ml_gpr, params.pspipe.ml_gpr_inj, params.out.logs )
+        RunPSPIPE( ps_dir, rev_ch.toml_file, params.pspipe.obsid, "${params.out.logs}/${params.data.pdd_mslist}.ps", params.pspipe.merge_ms, params.pspipe.delay_flagger, params.pspipe.vis_flagger, params.pspipe.ml_gpr, params.pspipe.ml_gpr_inj, params.out.logs )
 
     emit:
        RunPSPIPE.out.ready
@@ -532,18 +460,21 @@ workflow PowerSpectrum {
 }
 
 
-workflow FinalImages {
+workflow Image {
 
     take:
         ready
 
     main:
 
-        mses_sols_ch = ReadTxtLinesandAppend( ready, params.out.logs, "dd_fullband_time_chunks_mslist.txt", "/nan" )
+        mses_sols_ch = ReadTxtLinesandAppend( ready, params.out.logs, params.data.pdd_mslist, "/nan" )
 
         mses_and_imname_ch = mses_sols_ch.list_str.combine( channel.of( "postdd_corrected" ) )
 
-        WScleanImage ( true, mses_and_imname_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, params.wsclean.chansout, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit, params.postdd.beam.outcol )
+        // WScleanImage ( true, mses_and_imname_ch, params.wsclean.size, params.wsclean.scale, params.wsclean.niter, params.wsclean.pol, params.wsclean.chansout, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit, params.postdd.beam.outcol )
+
+        WScleanImage ( true, mses_and_imname_ch, 2560, '2.0amin', params.wsclean.niter, 'iquv', 1, params.wsclean.minuvl, params.wsclean.maxuvl, params.wsclean.weight, params.wsclean.polfit, 'DATA' )
+
 
     emit:
 
@@ -551,21 +482,6 @@ workflow FinalImages {
 
 }
 
-
-// workflow Run_WS {
-
-//     take:
-//         ready
-
-//     main:
-
-//         stage_ch = channel.of ( 'WS' )
-
-//         stage_params_ch = InitParams( ready,  stage_ch )
-
-//         Distribute ( stage_params_ch.params_standby, ready, stage_ch, stage_params_ch.params_file )
-
-// }
 
 workflow EXTRACT {
 

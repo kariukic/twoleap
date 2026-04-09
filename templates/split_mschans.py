@@ -8,6 +8,7 @@ import casacore.tables as pt
 
 import logging
 from argparse import ArgumentParser
+
 logging.basicConfig(format="%(levelname)s:%(message)s", level=logging.DEBUG)
 
 parser = ArgumentParser(description="Split a measurement set in frequency")
@@ -43,8 +44,10 @@ def makeSubbands(
     datacolumn,
 ):
 
-    spw_table = pt.table(ms + '/SPECTRAL_WINDOW')
-    num_channels = spw_table.getcol('NUM_CHAN')  # get the total number of channel sin the ms file
+    spw_table = pt.table(ms + "/SPECTRAL_WINDOW")
+    num_channels = spw_table.getcol(
+        "NUM_CHAN"
+    )  # get the total number of channel sin the ms file
 
     assert num_channels.shape == (1,)
     num_channels = num_channels[0]
@@ -56,7 +59,8 @@ def makeSubbands(
 
     for s, startchan in enumerate(startchans):
 
-        msout = ms.replace('.MS', f'_C{s:03}.MS')
+        # msout = ms.replace('.MS', f'_C{s:03}.MS')
+        msout = f"{ms.replace('.MS', '')}_C{s:03}.MS"
 
         comm = f"DP3 steps=[] msin={ms} msin.datacolumn={datacolumn} msin.startchan={startchan} msin.nchan={nchans_per_msout} msout.overwrite=true msout={msout}"
 

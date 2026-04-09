@@ -222,15 +222,15 @@ def distribute(
     ['/net/node1/data/storage/output_MST001.MS', '/net/node1/data/storage/output_MST002.MS', '/net/node2/data/storage/output_MST003.MS', '/net/node2/data/storage/output_MST004.MS', '/net/node3/data/storage/output_MST005.MS', '/net/node3/data/storage/output_MST006.MS']
     """
 
-    if msout_name[:-2] == "MS":
-        msout_name = msout_name.strip("MS")
-    if msout_name[:-2] == "ms":
-        msout_name = msout_name.strip("ms")
+    # if msout_name[:-2] == "MS":
+    #     msout_name = msout_name.strip("MS")
+    # if msout_name[:-2] == "ms":
+    #     msout_name = msout_name.strip("ms")
 
     assert datapath.startswith("/data/")
 
     ms_nums = [t for t in range(len(starttimeslots))]
-    msout_names = [msout_name + f"_T{t:03}.MS" for t in ms_nums]
+    msout_names = [msout_name.replace(".MS", "") + f"_T{t:03}.MS" for t in ms_nums]
 
     if nmses_per_node:
         msout_names = list(chunks(msout_names, nmses_per_node))
@@ -247,9 +247,11 @@ def distribute(
     if len(starttimeslots) != len(total_mses):
         assert len(starttimeslots) == len(total_mses) + 1
         last_ms_num = ms_nums[-1]
-        last_ms_name = msout_name + f"_T{last_ms_num:03}.MS"
+        last_ms_name = msout_name.replace(".MS", "") + f"_T{last_ms_num:03}.MS"
         msout_names[-1].append(last_ms_name)
-        logging.info(f"Node{nodes[-1]} will have 1 extra MS. Total {len(msout_names[-1])}")
+        logging.info(
+            f"Node{nodes[-1]} will have 1 extra MS. Total {len(msout_names[-1])}"
+        )
 
     all_msout_names = []
     for _n, (node, ms_sublist) in enumerate(zip(nodes, msout_names)):
@@ -364,6 +366,9 @@ def concatSubbands(
             with open(output_ms_list_file, "w") as f:
                 for outms in all_msout_names:
                     f.write(f"{outms}\n")
+            with open(f"{output_ms_list_file}.ps", "w") as f:
+                list_str = " ".join(all_msout_names)
+                f.write(list_str)
             logging.info(f"wrote the list of mses to: {output_ms_list_file}")
 
 

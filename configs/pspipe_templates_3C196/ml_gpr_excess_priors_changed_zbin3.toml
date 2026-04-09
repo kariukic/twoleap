@@ -1,0 +1,77 @@
+kern.uv_bins_du = 20
+kern.uv_bins_n_uni = 8
+
+
+kern.fg = ['fg_int', 'fg_mix']
+kern.eor = ['eor_vae', 'eor_excess']
+
+gp.use_uv_weight = true
+
+sampler_method = 'ultranest'
+ultranest.nlive = 100
+
+# mcmc.n_steps = 500
+# mcmc.n_walkers = 200
+# mcmc.n_burn = 200
+
+#mcmc.move = 'kde'
+
+
+[fg_int]
+type = 'MRBF'
+# variance.prior = 'Log10Uniform(-0., 0.5)'
+# variance.prior = 'Log10Uniform(-0.6, 0.2)'
+variance.prior = 'Log10Uniform(-1, 0.1)'
+variance.log_scale = true
+# we fixed the lenghtscale
+lengthscale.prior = 'Fixed(80)' #'Uniform(60, 100)' #
+ls_alpha.prior = 'Fixed(0)'
+use_uv_ps = true
+
+[fg_mix]
+type = 'MMat32'
+wedge_parametrization = true
+variance.prior = 'Log10Uniform(-0.4, 0.3)'
+# variance.prior = 'Log10Uniform(-0.3, 0.01)'
+variance.log_scale = true
+theta_rad.prior = 'Uniform(0.01, 0.5)'
+# theta_rad.prior = 'Uniform(0.01, 0.3)'
+# delay_buffer_us.prior = 'Fixed(0.1)' #commented
+# delay_buffer_us.prior = 'Uniform(0, 0.15)'
+delay_buffer_us.prior = 'Fixed(0.0775)'
+lengthscale.prior = 'Fixed(1)'
+
+[eor_vae]
+type = 'VAEKernTorch'
+fitter_filename = '/home/codex/chege/ml_gpr_models/vae_z9.164_n1500_GRIZZLY_latent2.pt'
+x1.prior = 'Uniform(-3, 3)'
+x2.prior = 'Uniform(-3, 3)'
+variance.prior = 'Log10Uniform(-7, -0.5)'
+variance.log_scale = true
+
+[eor_excess]
+type = 'MMat52'
+variance.prior = 'Log10Uniform(-3.8, -2.8)'
+# variance.prior = 'Log10Uniform(-4, -2)'
+variance.log_scale = true
+# lengthscale.prior = 'Uniform(0.1, 0.5)'
+lengthscale.prior = 'Uniform(0.01, 0.25)'
+# ls_alpha.prior = 'Uniform(-5, 40)'
+# ls_alpha.prior = 'Uniform(40, 120)' #for most zbin3 nights
+# ls_alpha.prior = 'Uniform(40, 80)' #for 11 zbin3 nights
+# ls_alpha.prior = 'Uniform(50, 120)' #4 nights
+ls_alpha.prior = 'Uniform(-50, 120)'
+# var_alpha.prior = 'Fixed(-0.25)'
+# var_alpha.prior = 'Uniform(0, 0.2)'
+var_alpha.prior = 'Fixed(0)'
+
+
+[kern.noise]
+alpha.prior = 'Fixed(1)' # check
+use_simulated_noise_cube = false
+use_sefd_freqs_estimate = true
+use_noise_std = false
+estimate_baseline_noise_from_stokes = 'V'
+estimate_baseline_noise_remove_n_pca = 0
+estimate_baseline_noise_from_channel_diff = false
+scale_baseline_noise = false

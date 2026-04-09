@@ -11,6 +11,7 @@ from pathlib import Path
 
 import logging
 from argparse import ArgumentParser
+
 logging.basicConfig(format="%(levelname)s:%(message)s", level=logging.DEBUG)
 
 parser = ArgumentParser(description="Split a measurement set in frequency")
@@ -61,8 +62,8 @@ def extract_T_and_C_numbers(strings):
     c_numbers = set()
 
     # Define the pattern to match 'T' followed by 3 digits and 'C' followed by 3 digits
-    t_pattern = re.compile(r'T(\d{3})')
-    c_pattern = re.compile(r'C(\d{3}).MS')
+    t_pattern = re.compile(r"T(\d{3})")
+    c_pattern = re.compile(r"C(\d{3}).MS")
 
     # Loop through each string in the list
     for s in strings:
@@ -81,7 +82,7 @@ def extract_T_and_C_numbers(strings):
 
 def extract_C_number(file_path):
     """Extract the C number from the file path."""
-    c_pattern = re.compile(r'C(\d{3}).MS')
+    c_pattern = re.compile(r"C(\d{3}).MS")
     match = c_pattern.search(file_path)
     if match:
         return match.group(1)
@@ -118,8 +119,12 @@ def write_txt_files_to_nodes(grouped_files, datapath, nodes, max_txt_files_per_n
     for c_number, files in grouped_files.items():
         # Get the base filename from one of the files
         p = Path(files[0])
-        base_filename = p.stem.replace('_T000', '')
-        txt_filename = f"{base_filename}.txt"
+        # base_filename = p.stem.replace("_T000", "")
+        # new_stem = p.stem.replace("_T000", "_subband")
+        fname = p.name
+        txt_filename = fname.replace("T000_C", "SB").replace(
+            ".MS", ".txt"
+        )  # f"{new_stem}.txt"
 
         # Determine the current node's path for saving the JSON file
         node_path = nodes[node_index]
@@ -127,9 +132,9 @@ def write_txt_files_to_nodes(grouped_files, datapath, nodes, max_txt_files_per_n
 
         # os.makedirs(node_dir, exist_ok=True)
 
-        txt_filepath = node_dir + txt_filename
+        txt_filepath = node_dir + "/" + txt_filename
 
-        with open(txt_filepath, 'w') as txt_file:
+        with open(txt_filepath, "w") as txt_file:
             txt_file.write("\n".join(files) + "\n")
 
         # Assign this JSON file to a node
@@ -145,7 +150,7 @@ def write_txt_files_to_nodes(grouped_files, datapath, nodes, max_txt_files_per_n
 def main(msin, datapath, nmses_per_node, from_nodes, to_nodes):
     all_msfiles = []
     for node in from_nodes:
-        all_msfiles += glob(f"/net/node{node}/{datapath}/{msin}_T*_C*.MS")
+        all_msfiles += glob(f"/net/node{node}/{datapath}/{msin}_T???_C???.MS")
 
     all_msfiles = sorted(all_msfiles)
     logging.info(f"Found {len(all_msfiles)} Total files")
@@ -159,7 +164,13 @@ def main(msin, datapath, nmses_per_node, from_nodes, to_nodes):
 
     logging.info(f"Made {len(grouped_files)} timechunk groups")
 
-    node_distributions = write_txt_files_to_nodes(grouped_files, datapath, to_nodes, nmses_per_node)
+    assert len(to_nodes) * nmses_per_node >= len(
+        grouped_files
+    ), "Not enough nodes to distribute all subbands!"
+
+    node_distributions = write_txt_files_to_nodes(
+        grouped_files, datapath, to_nodes, nmses_per_node
+    )
 
     # Print the distribution of JSON files across nodes
     for node, txt_files in node_distributions.items():
@@ -171,5 +182,5 @@ def main(msin, datapath, nmses_per_node, from_nodes, to_nodes):
 if __name__ == "__main__":
     args = parser.parse_args()
     assert os.path.isdir(args.datapath)
-    to_nodes = [f'/net/node{n}/' for n in args.to_nodes]
+    to_nodes = [f"/net/node{n}/" for n in args.to_nodes]
     main(args.msin, args.datapath, args.nmses_per_node, args.from_nodes, to_nodes)

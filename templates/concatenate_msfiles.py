@@ -79,12 +79,16 @@ def concat_ms(msfiles, output_file, concat_property="frequency", overwrite=False
     if os.path.exists(output_file):
         for msfile in msfiles:
             if os.path.samefile(msfile, output_file):
-                raise ValueError("Input Measurement Set '{0}' and output Measurement Set '{1}' "
-                                 "are the same file".format(msfile, output_file))
+                raise ValueError(
+                    "Input Measurement Set '{0}' and output Measurement Set '{1}' "
+                    "are the same file".format(msfile, output_file)
+                )
         if overwrite:
             delete_directory(output_file)
         else:
-            raise FileExistsError("The output Measurement Set exists and overwrite=False")
+            raise FileExistsError(
+                "The output Measurement Set exists and overwrite=False"
+            )
 
     # Construct the command to run depending on what's needed. It will be executed
     # later
@@ -95,14 +99,7 @@ def concat_ms(msfiles, output_file, concat_property="frequency", overwrite=False
             cmd = concat_time_command(msfiles, output_file)
     else:
         # Single input file -- just copy to output
-        cmd = [
-            "cp",
-            "-r",
-            "-L",
-            "--no-preserve=mode",
-            msfiles[0],
-            output_file
-        ]
+        cmd = ["cp", "-r", "-L", "--no-preserve=mode", msfiles[0], output_file]
 
     # Run the command
     try:
@@ -110,6 +107,7 @@ def concat_ms(msfiles, output_file, concat_property="frequency", overwrite=False
     except subprocess.CalledProcessError as err:
         print(err, file=sys.stderr)
         return err.returncode
+
 
 def concat_freq_command(msfiles, output_file, make_dummies=True):
     """
@@ -165,7 +163,15 @@ def concat_freq_command(msfiles, output_file, make_dummies=True):
     if np.sum(chan_diff) != 0:
         # Here we obtain the indices at which dummies should be inserted.
         # The division maps this back from individual channels to MSes.
-        dummy_idx = (np.ndarray.flatten(np.argwhere(chan_diff > 0))/len(chan_diff)*len(mslist)).round(0).astype(int)
+        dummy_idx = (
+            (
+                np.ndarray.flatten(np.argwhere(chan_diff > 0))
+                / len(chan_diff)
+                * len(mslist)
+            )
+            .round(0)
+            .astype(int)
+        )
         # Obtain a unique list of indices and the indices of their first occurence in the above original array.
         dummy_idx_u, idx_idx_u = np.unique(dummy_idx, return_index=True)
         # Express channel difference in data chunks (e.g. 2 MHz if from LINC).
@@ -181,14 +187,15 @@ def concat_freq_command(msfiles, output_file, make_dummies=True):
             dummy_multiplier = dummy_multiplier[idx_idx_u]
             # dummy_multiplier now contains the number of dummies that need to be inserted.
             # This list needs to be flat for NumPy's insert later on.
-            dummies = [['dummy.ms'] * x for x in dummy_multiplier]
+            dummies = [["dummy.ms"] * x for x in dummy_multiplier]
             dummies_flat = [i for l in dummies for i in l]
             # Generate the indices at which each dummy needs to be inserted.
-            final_idx = [[dummy_idx_u[i]] * len(dummies[i]) for i in range(len(dummies))]
+            final_idx = [
+                [dummy_idx_u[i]] * len(dummies[i]) for i in range(len(dummies))
+            ]
             final_idx_flat = [i for l in final_idx for i in l]
             # Finally insert them all at once.
             mslist = np.insert(mslist, final_idx_flat, dummies_flat)
-
 
     # Construct DP3 command
     cmd = [
@@ -228,7 +235,7 @@ def concat_time_command(msfiles, output_file):
         "giving",
         "{}".format(output_file),
         "AS",
-        "PLAIN"
+        "PLAIN",
     ]
     return cmd
 
@@ -247,7 +254,7 @@ def read_txt(txt_filepath):
         raise FileNotFoundError(f"The file {txt_filepath} does not exist.")
 
     # Read and load the TXT file (each line represents a file path)
-    with open(txt_filepath, 'r') as txt_file:
+    with open(txt_filepath, "r") as txt_file:
         file_list = txt_file.read().splitlines()
 
     return file_list
@@ -265,15 +272,27 @@ def main():
     parser = argparse.ArgumentParser(
         description=descriptiontext, formatter_class=argparse.RawTextHelpFormatter
     )
-    parser.add_argument("msin", type=str, help="Txt file with List of input Measurement Sets")
-    parser.add_argument("--msout", help="Output Measurement Set", type=str, default='concat.ms')
-    parser.add_argument('--concat_property', help='Property over which to concatenate: time or frequency',
-                        type=str, default='frequency')
-    parser.add_argument('--overwrite', help='Overwrite existing output file', type=bool, default=False)
+    parser.add_argument(
+        "msin", type=str, help="Txt file with List of input Measurement Sets"
+    )
+    parser.add_argument(
+        "--msout", help="Output Measurement Set", type=str, default="concat.ms"
+    )
+    parser.add_argument(
+        "--concat_property",
+        help="Property over which to concatenate: time or frequency",
+        type=str,
+        default="frequency",
+    )
+    parser.add_argument(
+        "--overwrite", help="Overwrite existing output file", type=bool, default=False
+    )
 
     args = parser.parse_args()
     msin = read_txt(args.msin)
-    return concat_ms(msin, args.msout, concat_property=args.concat_property, overwrite=args.overwrite)
+    return concat_ms(
+        msin, args.msout, concat_property=args.concat_property, overwrite=args.overwrite
+    )
 
 
 if __name__ == "__main__":

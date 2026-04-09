@@ -28,7 +28,7 @@ workflow {
 
 
 process AddRevision{
-    label 'pspipe'
+    label 'sing'
     publishDir "${ps_dir}"
 
     input:
@@ -49,7 +49,6 @@ process AddRevision{
     val "${ps_dir}/${revname}.toml", emit: toml_file
 
     shell:
-    // template 'add_rev.sh'
     '''
     #!/bin/bash
 
@@ -62,9 +61,6 @@ cp "!{projectDir}/configs/pspipe_templates_3C196/vis_flagger.toml" .
 cp "!{projectDir}/configs/pspipe_templates_3C196/flagger_rb2_test-flag-004-f2_3freqs_3cellsCasA.parset" .
 cp "!{projectDir}/configs/pspipe_templates_3C196/ml_gpr_revised.toml" .
 cp "!{projectDir}/configs/pspipe_templates_3C196/flagger_pre_combine.parset" .
-
-cp "!{projectDir}/configs/pspipe_toml_templates/gpr_config_hba.parset" .
-cp "!{projectDir}/configs/pspipe_toml_templates/gpr_config_v.parset" .
 
 if !{merge_ms}; then
     image_data_col="DATA"
@@ -120,7 +116,7 @@ EOL
 
 process RunPSPIPE {
     // debug true
-    label 'pspipe'
+    label 'sing'
 
     input:
     path ps_dir
@@ -138,60 +134,30 @@ process RunPSPIPE {
     val true, emit: ready
 
     shell:
-    // template 'run_pspipe.sh'
-    // ,ssins seems to give an error when included. TODO:
-    // '''
-    // psdb add_obs !{toml_file} !{obsid} -m !{msfiles}
-    // pspipe merge_ms,delay_flagger !{toml_file} !{obsid}
-    // pspipe image,gen_vis_cube !{toml_file} !{obsid}_flagged
-    // pspipe run_ml_gpr !{toml_file} !{obsid}_flagged
-    // '''
-    '''
-    psdb add_obs !{toml_file} !{obsid} -m !{msfiles}
-    obs="!{obsid}"
+        '''
+        mkdir -p !{pslogs}
+        psdb add_obs !{toml_file} !{obsid} -m !{msfiles}
+        obs="!{obsid}"
 
-    mkdir -p !{pslogs}
-
-    if !{vis_flag}; then
-        echo "Running Visflagger"
-        #pspipe vis_flagger !{toml_file} !{obsid} > !{pslogs}/ps_restore_flag_vis_flagger.log 2>&1
-        pspipe restore_flag !{toml_file} !{obsid} > !{pslogs}/ps_restore_flag.log 2>&1
-    fi
-    
-    # echo "making image cube"
-    # pspipe image,gen_vis_cube !{toml_file} ${obs} > !{pslogs}/ps_image_gen_vis_cube.log 2>&1
-
-    if !{ml_gpr}; then
-        echo "Running foreground subtraction with ML_GPR"
-        pspipe run_ml_gpr !{toml_file} ${obs} > !{pslogs}/ps_ml_gpr.log 2>&1
-
-        if !{ml_gpr_inj}; then
-            echo "Running ML_GPR signal injection"
-            pspipe run_ml_gpr_inj !{toml_file} ${obs} > !{pslogs}/ps_ml_gpr_inj.log 2>&1
+        if !{vis_flag}; then
+            echo "Running Visflagger"
+            pspipe restore_flag,vis_flagger !{toml_file} !{obsid} > !{pslogs}/ps_restore_flag_vis_flagger.log 2>&1
         fi
-    else
-        echo "GPR foreground subtraction NOT applied"
-    fi
+        
+        # echo "making image cube"
+        pspipe image,gen_vis_cube !{toml_file} ${obs} > !{pslogs}/ps_image_gen_vis_cube.log 2>&1
 
+        if !{ml_gpr}; then
+            echo "Running foreground subtraction with ML_GPR"
+            pspipe run_ml_gpr !{toml_file} ${obs} > !{pslogs}/ps_ml_gpr.log 2>&1
+
+            if !{ml_gpr_inj}; then
+                echo "Running ML_GPR signal injection"
+                pspipe run_ml_gpr_inj !{toml_file} ${obs} > !{pslogs}/ps_ml_gpr_inj.log 2>&1
+            fi
+        else
+            echo "GPR foreground subtraction NOT applied"
+        fi
+        python3 !{projectDir}/templates/plot_ps.py plot_ps !{toml_file} --obsid !{obsid} --plotdir !{ps_dir}
     '''
-
-}
-
-
-process PlotPowerSpectrum {
-    publishDir "${ps_dir}", pattern: "*.png", mode: "move", overwrite: true
-
-    input:
-    val ready
-    path ps_dir
-    path toml_file
-    val obsid
-
-    output:
-    path "${obsid}_*.png"
-
-    shell:
-    """
-    python3 ${projectDir}/templates/plot_power_spctrum.py !{toml_file} --obsid !{obsid}
-    """
 }
