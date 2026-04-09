@@ -1,7 +1,6 @@
 #!/usr/bin/env nextflow
 
 include {
-    ClipData ;
     DP3CalibrateDI ;
     DP3GainCalDI ;
     DP3CalibrateDD ;
@@ -27,7 +26,6 @@ include {
     GetMSColumn
 } from './processes.nf'
 
-// FlagStations;
 
 workflow {
 
@@ -125,10 +123,7 @@ workflow FCAB {
     // Average.out.done_averaging
     AOqualityCollect.out
 }
-//TODO:
-// turn on aoflager
-// return avg_ch
-// turn on aoquality collect
+
 
 workflow DISmooth {
     take:
