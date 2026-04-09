@@ -101,17 +101,6 @@ workflow FCAB {
 
     all_msets_and_averaged_msnames_ch = filtered_mset_ch.flatten().merge(averaged_msnames_ch.flatten())
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////////
-    // mset_ch = channel.fromPath( params.data.raw_ms_glob, glob: true, checkIfExists: true, type: 'dir' )
-
-    // filtered_mset_ch = mset_ch.collect { mset -> "${params.data.path}/" + mset.getName()+ '.noInter' }
-
-    // averaged_msnames_ch = mset_ch.collect { mset -> mset.getName() + '.noInter.flagged.di_averaged3' } //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-    // all_msets_and_averaged_msnames_ch = filtered_mset_ch.flatten().merge( averaged_msnames_ch.flatten() )
-
-
-    //////////////////////////////////////////////////////////////////////////////////////////
 
     avg_ch = Average(flag_ch.collect(), all_msets_and_averaged_msnames_ch, params.average.lta_to_di.column, params.average.lta_to_di.timestep, params.average.lta_to_di.freqstep)
 
