@@ -1,44 +1,26 @@
 #!/usr/bin/env nextflow
 
 include {
-    getTime;
+    getTime
 } from './modules/utils.nf'
 
-
-process ScaleData {
-    debug true
-    label 'sing'
-
-    input:
-        path ms
-
-    output: 
-        path "${ms}"
-
-    script:
-        time = getTime()
-        """
-        python3 /home/codex/chege/software/pipelines/nextleap/templates/scaledata.py -i ${ms} -f 0 > "${ms}/scale_${time}.log" 2>&1
-        """
-}
 
 process FlagIntra {
     debug true
     label 'sing'
 
     input:
-        val ready
-        path ms
+    val ready
+    path ms
 
     output:
-        val true
+    val true
 
     script:
-        time = getTime()
+    time = getTime()
+    """
+        python3 ${projectDir}/templates/flag_intrastations.py -i ${ms} > "${ms}/flag_intrastations_${time}.log" 2>&1
         """
-        python3 /home/codex/chege/software/pipelines/twoleap/templates/flag_intrastations.py -i ${ms} > "${ms}/flag_intrastations_${time}.log" 2>&1
-        """
-
 }
 //         """
 //         // #!/usr/bin/env python3
@@ -54,15 +36,15 @@ process ClipData {
     label 'sing'
 
     input:
-        path ms
+    path ms
 
     output:
-        path "${ms}"
+    path "${ms}"
 
     script:
-        time = getTime()
-        """
-        python3 /home/codex/chege/software/pipelines/nextleap/templates/clip_data.py -i ${ms} --flag_intrastations --flag_badbaselines -c DATA  > "${ms}/clip_${time}.log" 2>&1
+    time = getTime()
+    """
+        python3 ${projectDir}/templates/clip_data.py -i ${ms} --flag_intrastations --flag_badbaselines -c DATA  > "${ms}/clip_${time}.log" 2>&1
         """
 }
 
@@ -72,21 +54,18 @@ process FlagBaselines {
     label 'sing'
 
     input:
-        val ready
-        path ms
-        val baselines
+    val ready
+    path ms
+    val baselines
 
     output:
-        val true
+    val true
 
     script:
-        time = getTime()
-        """
+    time = getTime()
+    """
         DP3 steps=[preflagger] msin=${ms} preflagger.baseline="${baselines}" msout=. msout.overwrite=True > "${params.out.logs}/filter_bad_stations.log"
         """
-
-        // DP3 steps=[preflagger,filter] msin=${ms} preflagger.baseline="${baselines}" filter.remove=false filter.baseline="${baselines}" msout=. msout.overwrite=True > "${params.out.logs}/filter_bad_stations.log"
-        // python3 /home/codex/chege/software/pipelines/twoleap/templates/flag_stations.py -i ${ms} -r  > "${ms}/flag_station_${time}.log" 2>&1
 }
 
 
@@ -96,15 +75,15 @@ process FilterInter {
     publishDir "${params.data.path}", mode: 'move'
 
     input:
-        val ready
-        path ms
+    val ready
+    path ms
 
     output:
-        path "${ms.getName() + '.noInter'}"
+    path "${ms.getName() + '.noInter'}"
 
     script:
-        time = getTime()
-        """
+    time = getTime()
+    """
         DP3 msin=${ms} steps=[filter] filter.remove=true filter.baseline="[CR]S*&&" msout="${ms.getName() + '.noInter'}" msout.overwrite=True > "${params.out.logs}/filter_intrastations_and_international_stations_${ms}_${time}.log" 2>&1
         """
 }
@@ -112,19 +91,19 @@ process FilterInter {
 
 process FitBpol {
     debug true
-    publishDir "${ms}" , mode: 'copy'
+    publishDir "${ms}", mode: 'copy'
 
     input:
-        val ready
-        tuple path(ms), path(solsfile)
-        val degree
+    val ready
+    tuple path(ms), path(solsfile)
+    val degree
 
     output:
-        path "${solsfile.getSimpleName()}_degree${degree}_bpol.h5"
-        
+    path "${solsfile.getSimpleName()}_degree${degree}_bpol.h5"
+
     script:
-        time = getTime()
-        """
+    time = getTime()
+    """
         python3 ${projectDir}/templates/fit_bpol.py -s ${solsfile} -d ${degree}   > "${params.out.logs}/fit_degree${degree}_bpol_${ms}_${solsfile}_${time}.log" 2>&1
         """
 }
@@ -137,17 +116,16 @@ process UnpackMSTarball {
     publishDir "${params.data.path}", mode: 'move'
 
     input:
-        val ready
-        path ms
-        val mslabel
+    val ready
+    path ms
+    val mslabel
 
     output:
-        path "${ms.getSimpleName()}_${mslabel}.MS"
-        
+    path "${ms.getSimpleName()}_${mslabel}.MS"
 
     script:
-        time = getTime()
-        """
+    time = getTime()
+    """
         python3 ${projectDir}/templates/untarLTAData.py -i ${ms} -l ${mslabel}  > "${params.out.logs}/extract_${ms}_${time}.log" 2>&1
         """
 }
@@ -158,16 +136,16 @@ process GetMSColumn {
     label 'sing'
 
     input:
-        val ready
-        tuple path(ms), val(msout)
-        val column
+    val ready
+    tuple path(ms), val(msout)
+    val column
 
-    output: 
-        path "${ms}"
+    output:
+    path "${ms}"
 
     script:
-        time = getTime()
-        """
+    time = getTime()
+    """
         DP3 steps=[] msin=${ms} msin.datacolumn=${column} msout=${msout} msout.overwrite=True > "${params.out.logs}/get_column_${ms}_${column}_${time}.log" 2>&
         """
 }
@@ -177,29 +155,29 @@ process DP3GainCalDI {
     debug true
     label 'sing'
     // maxForks 4
-    publishDir "${ms}" , mode: 'copy'
+    publishDir "${ms}", mode: 'copy'
 
     input:
-        val ready
-        path ms
-        path parset
-        path sourcedb
-        val solsfile
-        val incol
-        val solint
-        val uvlambdamin
-        val uvlambdamax
-        val uvmmax
-        val nchan
+    val ready
+    path ms
+    path parset
+    path sourcedb
+    val solsfile
+    val incol
+    val solint
+    val uvlambdamin
+    val uvlambdamax
+    val uvmmax
+    val nchan
 
     output:
-        path "${solsfile}"
+    path "${solsfile}"
 
     script:
 
-        time = getTime()
+    time = getTime()
 
-        """
+    """
         DP3 ${parset} msin=${ms} msin.datacolumn=${incol} gaincal.sourcedb=${sourcedb} gaincal.parmdb=${solsfile} gaincal.solint=${solint} gaincal.uvlambdamin=${uvlambdamin} gaincal.uvlambdamax=${uvlambdamax} gaincal.uvmmax=${uvmmax} gaincal.nchan=${nchan} > "${ms}/cal_${solsfile}_${time}.log"
         """
 }
@@ -209,93 +187,97 @@ process DP3CalibrateDI {
     debug true
     label 'sing'
     maxForks 4
-    publishDir "${ms}" , mode: 'copy'
+    publishDir "${ms}", mode: 'copy'
 
     input:
-        val ready
-        path ms
-        path parset
-        path sourcedb
-        val solsfile
-        val incol
-        val solint
-        val uvlambdamin
-        val uvlambdamax
-        val uvmmax
-        val nchan
-        val flagstations
-        val calmode
-        val smoothnessconstraint
-        val propagate_sols
-        val maxiter
-        val beamproximitylimit
-        val usebeam
-        val beammode
-        val propagate_converged_sols_only
-        val scaling_coefficient
+    val ready
+    path ms
+    path parset
+    path sourcedb
+    val solsfile
+    val incol
+    val solint
+    val uvlambdamin
+    val uvlambdamax
+    val uvmmax
+    val nchan
+    val flagstations
+    val calmode
+    val smoothnessconstraint
+    val propagate_sols
+    val maxiter
+    val beamproximitylimit
+    val usebeam
+    val beammode
+    val propagate_converged_sols_only
+    val scaling_coefficient
 
     output:
-        path "${solsfile}"
+    path "${solsfile}"
 
     script:
 
-        time = getTime()
-        if ( flagstations )
-            """
+    time = getTime()
+    if (flagstations) {
+        """
             DP3 ${parset} steps=[preflagger,scaledata,ddecal] msin=${ms} msin.datacolumn=${incol} preflagger.baseline="${flagstations}" scaledata.stations=[*] scaledata.coeffs=[${scaling_coefficient}] ddecal.sourcedb=${sourcedb} ddecal.h5parm=${solsfile} ddecal.solint=${solint} ddecal.uvlambdamin=${uvlambdamin} ddecal.uvlambdamax=${uvlambdamax} ddecal.uvmmax=${uvmmax} ddecal.nchan=${nchan} ddecal.mode=${calmode} ddecal.smoothnessconstraint=${smoothnessconstraint} ddecal.propagatesolutions=${propagate_sols} ddecal.maxiter=${maxiter} ddecal.beamproximitylimit=${beamproximitylimit} ddecal.usebeammodel=${usebeam} ddecal.beammode=${beammode} ddecal.propagateconvergedonly=${propagate_converged_sols_only} > "${ms}/cal_${solsfile}_${time}.log"
             """
-        else
-            """
+    }
+    else {
+        """
             DP3 ${parset} steps=[scaledata,ddecal] msin=${ms} msin.datacolumn=${incol} scaledata.stations=[*] scaledata.coeffs=[${scaling_coefficient}] ddecal.sourcedb=${sourcedb} ddecal.h5parm=${solsfile} ddecal.solint=${solint} ddecal.uvlambdamin=${uvlambdamin} ddecal.uvlambdamax=${uvlambdamax} ddecal.uvmmax=${uvmmax} ddecal.nchan=${nchan} ddecal.mode=${calmode} ddecal.smoothnessconstraint=${smoothnessconstraint} ddecal.propagatesolutions=${propagate_sols} ddecal.maxiter=${maxiter} ddecal.beamproximitylimit=${beamproximitylimit} ddecal.usebeammodel=${usebeam} ddecal.beammode=${beammode} ddecal.propagateconvergedonly=${propagate_converged_sols_only} > "${ms}/cal_${solsfile}_${time}.log"
             """
+    }
 }
 
 process DP3CalibrateDD {
     debug true
     label 'sing'
     maxForks 1
-    publishDir "${ms}" , mode: 'copy'
+    publishDir "${ms}", mode: 'copy'
 
     input:
-        val ready
-        path ms
-        path parset
-        path sourcedb
-        val solsfile
-        val incol
-        val calmode
-        val solint
-        val uvlambdamin
-        val uvlambdamax
-        val uvmmax
-        val nchan
-        val usebeam
-        val beammode
-        val smoothnessconstraint
-        val truncateksmoothkernel
-        val robust_reg
-        val propagate_sols
-        val maxiter
-        val beamproximitylimit
-        val correctfreqsmearing
-        val flagstations
-        val propagate_converged_sols_only
-        val flux_threshold  // Add this input
-        val smoothness_max_factor  // Add this input
-        val solver
+    val ready
+    path ms
+    path parset
+    path sourcedb
+    val solsfile
+    val incol
+    val calmode
+    val solint
+    val uvlambdamin
+    val uvlambdamax
+    val uvmmax
+    val nchan
+    val usebeam
+    val beammode
+    val smoothnessconstraint
+    val truncateksmoothkernel
+    val robust_reg
+    val propagate_sols
+    val maxiter
+    val beamproximitylimit
+    val correctfreqsmearing
+    val flagstations
+    val propagate_converged_sols_only
+    val flux_threshold
+    // Add this input
+    val smoothness_max_factor
+    // Add this input
+    val solver
 
     output:
-        path "${solsfile}", emit: solsfile
-        path "filtered_sky_model.txt", emit: filtered_model
-        path "smoothness_factors.csv"
-        val true, emit: done
+    path "${solsfile}", emit: solsfile
+    path "filtered_sky_model.txt", emit: filtered_model
+    path "smoothness_factors.csv"
+    val true, emit: done
 
     script:
-        time = getTime()
-        
-        // Create filtered sky model and get smoothness factors
-        smoothness_command = """
-        python3 /home/codex/chege/projects/3C196/scripts/dd_smoothness_factors_v3.py \\
+    time = getTime()
+
+    // Create filtered sky model and get smoothness factors
+    smoothness_command = """
+        python3 ${projectDir}/templates/dd_smoothness_factors_v3.py \\
             ${ms} \\
             ${sourcedb} \\
             filtered_sky_model.txt \\
@@ -306,15 +288,15 @@ process DP3CalibrateDD {
             --output-factors smoothness_factors.csv > "${ms}/filter_sources_${time}.log"
         """
 
-        // Calculate solutions_per_direction
-        // --min_flux 25 --max_flux 50 use this to force an output of all 1s, migth be useful for testing
-        //  --min_flux 1 --max_flux 5, use this to get actual solutions per direction, works for Ateams subtraction
-        solutions_per_direction_command="""
-            python3 /home/codex/chege/projects/3C196/scripts/sols_per_dir.py ${sourcedb} ${ms} --solint ${solint} --exclude_direction ${params.ddecal.dd.subtract.exclude_directions} --flux_threshold ${flux_threshold} --min_flux 25 --max_flux 50 > "${ms}/solperdir.txt"
+    // Calculate solutions_per_direction
+    // --min_flux 25 --max_flux 50 use this to force an output of all 1s, migth be useful for testing
+    //  --min_flux 1 --max_flux 5, use this to get actual solutions per direction, works for Ateams subtraction
+    solutions_per_direction_command = """
+            python3 ${projectDir}/templates/sols_per_dir.py ${sourcedb} ${ms} --solint ${solint} --exclude_direction ${params.ddecal.dd.subtract.exclude_directions} --flux_threshold ${flux_threshold} --min_flux 25 --max_flux 50 > "${ms}/solperdir.txt"
         """
-        
-        // Extract smoothness factors from CSV file
-        extract_factors_command = """
+
+    // Extract smoothness factors from CSV file
+    extract_factors_command = """
         # Read smoothness factors for passing patches only
         python3 -c "
         import csv
@@ -328,9 +310,9 @@ process DP3CalibrateDD {
         print(','.join(factors))
         " > smoothness_factors_list.txt
         """
-        
-        if ( flagstations )
-            """
+
+    if (flagstations) {
+        """
             #step 0: get number of subsolutions per direction
             ${solutions_per_direction_command}
             solutions_per_direction=\$(cat solutions_per_direction.txt)
@@ -371,8 +353,9 @@ process DP3CalibrateDD {
                 ddecal.solveralgorithm=${solver} \\
                 ddecal.propagateconvergedonly=${propagate_converged_sols_only} > "${ms}/cal_${solsfile}_${time}.log"
             """
-        else
-            """
+    }
+    else {
+        """
             # Step 1: Filter sources and calculate smoothness factors
             ${smoothness_command}
             
@@ -408,6 +391,7 @@ process DP3CalibrateDD {
                 ddecal.solveralgorithm=${solver} \\
                 ddecal.propagateconvergedonly=${propagate_converged_sols_only} > "${ms}/cal_${solsfile}_${time}.log"
             """
+    }
 }
 
 
@@ -415,56 +399,57 @@ process DP3CalibrateDDD {
     debug true
     label 'singDPPP'
     maxForks 2
-    publishDir "${ms}" , mode: 'copy'
+    publishDir "${ms}", mode: 'copy'
 
     input:
-        val ready
-        path ms
-        path parset
-        path sourcedb
-        val solsfile
-        val incol
-        val calmode
-        val solint
-        val uvlambdamin
-        val uvlambdamax
-        val uvmmax
-        val nchan
-        val usebeam
-        val beammode
-        val smoothnessconstraint
-        val truncateksmoothkernel
-        val robust_reg
-        val propagate_sols
-        val maxiter
-        val beamproximitylimit
-        val correctfreqsmearing
-        val flagstations
-        val propagate_converged_sols_only
+    val ready
+    path ms
+    path parset
+    path sourcedb
+    val solsfile
+    val incol
+    val calmode
+    val solint
+    val uvlambdamin
+    val uvlambdamax
+    val uvmmax
+    val nchan
+    val usebeam
+    val beammode
+    val smoothnessconstraint
+    val truncateksmoothkernel
+    val robust_reg
+    val propagate_sols
+    val maxiter
+    val beamproximitylimit
+    val correctfreqsmearing
+    val flagstations
+    val propagate_converged_sols_only
 
     output:
-        path "${solsfile}"
+    path "${solsfile}"
 
     script:
 
-        time = getTime()
-        // chosen_sourcedb='ddmodel.txt'
+    time = getTime()
+    // chosen_sourcedb='ddmodel.txt'
 
-        if ( flagstations )
+    if (flagstations) {
 
-            """
+        """
             # python3 /home/codex/chege/projects/3C196/notebooks_v2/ateam_model/add_cyg_to_model.py -m ${ms} > "${ms}/choosing_model_${time}.log"
 
             DP3 ${parset} steps=[preflagger,ddecal] msin=${ms} preflagger.baseline="${flagstations}" msin.datacolumn=${incol} ddecal.sourcedb=${sourcedb} ddecal.h5parm=${solsfile} ddecal.solint=${solint} ddecal.uvlambdamin=${uvlambdamin} ddecal.uvlambdamax=${uvlambdamax} ddecal.uvmmax=${uvmmax} ddecal.nchan=${nchan} ddecal.mode=${calmode} ddecal.smoothnessconstraint=${smoothnessconstraint} ddecal.model_weighted_constraints=${robust_reg} ddecal.propagatesolutions=${propagate_sols} ddecal.maxiter=${maxiter} ddecal.beamproximitylimit=${beamproximitylimit} ddecal.correctfreqsmearing=${correctfreqsmearing} ddecal.usebeammodel=${usebeam} ddecal.beammode=${beammode} ddecal.smoothness_kernel_truncation=${truncateksmoothkernel} ddecal.propagateconvergedonly=${propagate_converged_sols_only} > "${ms}/cal_${solsfile}_${time}.log"
             """
+    }
+    else {
 
-        else
-
-            """
+        """
             # python3 /home/codex/chege/projects/3C196/notebooks_v2/ateam_model/add_cyg_to_model.py -m ${ms} > "${ms}/choosing_model_${time}.log"
 
             DP3 ${parset} steps=[ddecal] msin=${ms} msin.datacolumn=${incol} ddecal.sourcedb=${sourcedb} ddecal.h5parm=${solsfile} ddecal.solint=${solint} ddecal.uvlambdamin=${uvlambdamin} ddecal.uvlambdamax=${uvlambdamax} ddecal.uvmmax=${uvmmax} ddecal.nchan=${nchan} ddecal.mode=${calmode} ddecal.smoothnessconstraint=${smoothnessconstraint} ddecal.model_weighted_constraints=${robust_reg} ddecal.propagatesolutions=${propagate_sols} ddecal.maxiter=${maxiter} ddecal.beamproximitylimit=${beamproximitylimit} ddecal.correctfreqsmearing=${correctfreqsmearing} ddecal.usebeammodel=${usebeam} ddecal.beammode=${beammode} ddecal.smoothness_kernel_truncation=${truncateksmoothkernel} ddecal.propagateconvergedonly=${propagate_converged_sols_only} > "${ms}/cal_${solsfile}_${time}.log"
             """
+    }
 }
 
 
@@ -473,20 +458,20 @@ process ApplyGains {
     label 'singDPPP'
 
     input:
-        val ready
-        tuple path(ms), path(solsfile)
-        val parset
-        val incol
-        val outcol
+    val ready
+    tuple path(ms), path(solsfile)
+    val parset
+    val incol
+    val outcol
 
     output:
-        path "${ms}"
+    path "${ms}"
 
     script:
-        
-        time = getTime()
 
-        """
+    time = getTime()
+
+    """
         DP3 ${parset} msin=${ms} applycal.parmdb=${solsfile} msin.datacolumn=${incol} msout.datacolumn=${outcol} > "${ms}/applygains_${solsfile}_to_${outcol}_${time}.log" 2>&1
         """
 }
@@ -508,7 +493,7 @@ process ApplyGains {
 
 //     output:
 //         path "${full_ms_path}"
-    
+
 //     script:
 //         time = getTime()
 //         // chosen_sourcedb='ddmodel.txt'
@@ -521,21 +506,21 @@ process ApplyGains {
 
 process SubtractSources {
     label 'singDPPP'
-    
+
     input:
-        val ready
-        tuple path(full_ms_path), path(sourcedb_name), path(calibration_solutions_file)
-        path subtraction_parset
-        val input_datacolumn
-        val output_datacolumn
-        val exclude_directions
-    
+    val ready
+    tuple path(full_ms_path), path(sourcedb_name), path(calibration_solutions_file)
+    path subtraction_parset
+    val input_datacolumn
+    val output_datacolumn
+    val exclude_directions
+
     output:
-        path "${full_ms_path}"
-    
+    path "${full_ms_path}"
+
     script:
-        time = getTime()
-        """
+    time = getTime()
+    """
         # Get subtraction directions using Python script
         SUBTRACT_DIRECTIONS=\$(python3 ${projectDir}/templates/get_subtract_directions.py "${sourcedb_name}" "${exclude_directions}")
         echo "Subtraction directions: \$SUBTRACT_DIRECTIONS"
@@ -554,15 +539,15 @@ process SubtractSources {
 
 process MakeDP3ClustersListFile {
     input:
-        val ready
-        val num
-        val fname
+    val ready
+    val num
+    val fname
 
     output:
-        path "${fname}"
+    path "${fname}"
 
     script:
-        """
+    """
         #!/usr/bin/env python3
         clusters_str = ",".join([f"[cluster{c}]" for c in list(range(1, ${num}))])
         with open("${fname}", "w") as txt:
@@ -576,31 +561,27 @@ process WScleanImage {
     publishDir "${params.data.path}/${params.out.results}/wsclean/${datacol}", pattern: "*.fits", mode: "move", overwrite: true
     publishDir "${params.data.path}/${params.out.results}/wsclean/${datacol}/plots", pattern: "*.png", mode: "move", overwrite: true
 
-    // publishDir "${params.data.path}/${params.out.results}/images", pattern: "*.txt", mode: "copy", overwrite: true
-
     input:
-        val ready
-        tuple val(mses), val(imname)
-        val size
-        val scale
-        val niter
-        val pol
-        val chansout
-        val minuvl
-        val maxuvl
-        val weight
-        val polfit
-        val datacol
-        
+    val ready
+    tuple val(mses), val(imname)
+    val size
+    val scale
+    val niter
+    val pol
+    val chansout
+    val minuvl
+    val maxuvl
+    val weight
+    val polfit
+    val datacol
 
     output:
-        path "*.fits"
-        val true , emit: done
-        // path "${imname}-sources.txt", emit: model
+    path "*.fits"
+    val true, emit: done
 
     script:
-        if ( chansout == 1 )
-            """
+    if (chansout == 1) {
+        """
             wsclean -v -log-time -name ${imname} -data-column ${datacol} -pol ${pol} -weight ${weight} -scale ${scale} -size ${size} ${size} -make-psf -niter ${niter} -gridder wgridder -reorder ${mses} > ${params.out.logs}/wsclean_${imname}_image.log
 
             ls *-I-image.fits > imlist_I.txt
@@ -613,9 +594,9 @@ process WScleanImage {
             python3 ${projectDir}/templates/plot_images.py plot --imagelist imlist_Q.txt --filename ${imname}_Q
             python3 ${projectDir}/templates/plot_images.py plot --imagelist imlist_U.txt --filename ${imname}_U
             """
-
-        else
-            """
+    }
+    else {
+        """
             wsclean -v -log-time -name ${imname} -data-column ${datacol} -pol ${pol} -weight ${weight} -scale ${scale} -size ${size} ${size} -niter ${niter} -apply-primary-beam -make-psf -join-channels -channels-out ${chansout} -gridder wgridder -no-update-model-required -no-dirty -no-mf-weighting ${mses} > ${params.out.logs}/wsclean_${imname}_image.log
 
             ls *-I-image.fits > imlist_I.txt
@@ -629,7 +610,7 @@ process WScleanImage {
             python3 ${projectDir}/templates/plot_images.py plot --imagelist imlist_U.txt --filename ${imname}_U
 
             """
-
+    }
 }
 
 //   -minuv-l ${minuvl} -maxuv-l ${maxuvl}
@@ -643,16 +624,16 @@ process AOqualityCollect {
     maxForks 5
 
     input:
-        val ready
-        path full_ms_path
-        val data_column
+    val ready
+    path full_ms_path
+    val data_column
 
     output:
-        val true
+    val true
 
     script:
-        time=getTime()
-        """
+    time = getTime()
+    """
         aoquality collect -d ${data_column} ${full_ms_path}  > ${params.out.logs}/aoq_collect_${full_ms_path.getName()}_${time}.log 2>&1
         """
 }
@@ -662,16 +643,16 @@ process GetData {
     debug true
 
     input:
-        val ready
-        val nodes
-        val glob
-        val txtname
+    val ready
+    val nodes
+    val glob
+    val txtname
 
     output:
-        path "${txtname}"
+    path "${txtname}"
 
     script:
-        """
+    """
         ls -d ${glob} >> ${txtname}
         cp ${txtname} ${params.data.path}
         """
@@ -680,7 +661,7 @@ process GetData {
 
 // process AOqualityCombine {
 //     label 'singDPPP'
-    
+
 //     input:
 //         val ready
 //         val mses
@@ -702,22 +683,22 @@ process AOqualityCombine {
     publishDir "${params.data.path}/${params.out.results}/aoquality/${output_name}", pattern: "*.qs", mode: "copy", overwrite: true
     publishDir "${params.data.path}/${params.out.results}/aoquality/${output_name}", pattern: "*.pkl", mode: "copy", overwrite: true
     publishDir "${params.data.path}/${params.out.results}/aoquality/${output_name}/plots", pattern: "*.pdf", mode: "copy", overwrite: true
-    
+
     input:
-        val ready
-        val file_list
-        val output_name
+    val ready
+    val file_list
+    val output_name
 
     output:
-        path "${output_name}.qs"
-        path "*.pdf"
-        val true, emit: done
+    path "${output_name}.qs"
+    path "*.pdf"
+    val true, emit: done
 
     script:
-        time=getTime()
-        List tlist = file(file_list).readLines()
-        String mses = tlist.collect {"${it}"}.join(" ")
-        """
+    time = getTime()
+    def tlist: List = file(file_list).readLines()
+    def mses: String = tlist.collect { "${it}" }.join(" ")
+    """
         aoquality combine ${output_name}.qs ${mses} > ${params.out.logs}/combine_${output_name}_${time}.log 2>&1
         python3 ${projectDir}/templates/plot_flags.py plot_occ ${file_list} --filename ${output_name} >> ${params.out.logs}/combine_${output_name}_${time}.log 2>&1
         python3 ${projectDir}/templates/plot_aoqstats.py plot_aoq "${output_name}.qs" --name ${output_name} >> ${params.out.logs}/combine_${output_name}_${time}.log 2>&1
@@ -733,17 +714,17 @@ process H5ParmCollect {
     publishDir "${params.data.path}/${params.out.results}/solutions/${output_name}/plots", pattern: "*.png", mode: "move", overwrite: true
 
     input:
-        val ready
-        val solution_files
-        val output_name
+    val ready
+    val solution_files
+    val output_name
 
     output:
-        path "${output_name}.h5", emit: combined_sols
-        path "*.png", emit: plots
-        val true, emit: done
+    path "${output_name}.h5", emit: combined_sols
+    path "*.png", emit: plots
+    val true, emit: done
 
     script:
-        """
+    """
         H5parm_collector.py ${solution_files} -o ${output_name}.h5 > "${params.out.logs}/h5parm_collect.log" 2>&1
         #soltool plot --plot_dir \$(pwd) ${output_name}.h5 >> "${params.out.logs}/h5parm_collect.log" 2>&1
         python3 ${projectDir}/templates/plot_sols.py plot ${output_name}.h5 >> "${params.out.logs}/h5parm_collect.log" 2>&1
@@ -757,24 +738,23 @@ process MergeChansSplitTime {
     maxForks 1
 
     input:
-        val ready
-        val msfiles
-        val nodes
-        val ntimes
-        val column
-        val msout
-        val mses_per_node
-        val outtxt
+    val ready
+    val msfiles
+    val nodes
+    val ntimes
+    val column
+    val msout
+    val mses_per_node
+    val outtxt
 
     output:
-        val true //"${outtxt}"
+    val true
 
     shell:
-        nd  = nodes.join(' ')
-        """
+    nd = nodes.join(' ')
+    """
         python3 !{projectDir}/templates/concat_split.py --mslist !{msfiles} --msout !{msout} --ntimes !{ntimes} --nodes !{nd} --datapath !{params.data.path} --datacolumn !{column} --output_ms_list_file !{outtxt} --nmses_per_node !{mses_per_node} -t 0.1 > ${params.out.logs}/concat_freqs_split_time.log 2>&1
         """
-
 }
 
 
@@ -782,19 +762,18 @@ process SplitMSToSubbands {
     label 'sing'
 
     input:
-        val ready
-        val msfile
-        val nchans_per_msout
-        val datacolumn
+    val ready
+    val msfile
+    val nchans_per_msout
+    val datacolumn
 
     output:
-        val true
+    val true
 
     shell:
-        """
+    """
         python3 ${projectDir}/templates/split_mschans.py -m !{msfile} -n !{nchans_per_msout} -d !{datacolumn} > ${msfile}/split_mschans_to_subbands.log 2>&1
         """
-
 }
 
 
@@ -802,22 +781,21 @@ process GetTimeChunksPerSubband {
     label 'sing'
 
     input:
-        val ready
-        val msin
-        val nmses_per_node
-        val from_nodes
-        val to_nodes
+    val ready
+    val msin
+    val nmses_per_node
+    val from_nodes
+    val to_nodes
 
     output:
-        val true
+    val true
 
     shell:
-        fnds  = from_nodes.join(' ')
-        tnds  = to_nodes.join(' ')
-        """
+    fnds = from_nodes.join(' ')
+    tnds = to_nodes.join(' ')
+    """
         python3 ${projectDir}/templates/write_subband_time_chunks.py -m !{msin} -d !{params.data.path} -n !{nmses_per_node} -f !{fnds} -t !{tnds} > ${params.out.logs}/write_subband_time_chunks.log 2>&1
         """
-
 }
 
 
@@ -826,18 +804,17 @@ process ConcatMSesinTime {
     publishDir "${params.data.path}", mode: "move", overwrite: true
 
     input:
-        val ready
-        tuple val(msfiles), val(msout)
+    val ready
+    tuple val(msfiles), val(msout)
 
     output:
-        path "${msout}"
-        val true, emit: done
+    path "${msout}"
+    val true, emit: done
 
     shell:
-        """
+    """
         python3 ${projectDir}/templates/concatenate_msfiles.py !{msfiles} --msout !{msout} --concat_property time > ${params.out.logs}/!{msout}_concat_mses_in_time.log 2>&1
         """
-
 }
 
 
@@ -845,15 +822,15 @@ process WriteMSlist {
     publishDir params.out.logs, mode: "copy", overwrite: true
 
     input:
-        val ready
-        val nodes
-        val glob_pattern
-        val txtname
+    val ready
+    val nodes
+    val glob_pattern
+    val txtname
 
     output:
-        path "${txtname}", emit: per_line_mslist
-        path "${txtname}.ps", emit: single_line_mslist
-    
+    path "${txtname}", emit: per_line_mslist
+    path "${txtname}.ps", emit: single_line_mslist
+
     script:
     """
 #!/usr/bin/python3
@@ -878,7 +855,7 @@ with open("${txtname}.ps", "w") as out:
 
 //     output:
 //         val true
-    
+
 //     script:
 //     """
 // #!/usr/bin/python3
@@ -900,43 +877,41 @@ process ApplyBEAM {
     label 'singDPPP'
 
     input:
-        val ready
-        path ms
-        path parset
-        val incol
-        val outcol
+    val ready
+    path ms
+    path parset
+    val incol
+    val outcol
 
     output:
-        // path "${ms}"
-        val true
+    // path "${ms}"
+    val true
 
     script:
-        time = getTime()
+    time = getTime()
 
-        """
+    """
         DP3 ${parset} msin=${ms} msin.datacolumn=${incol} msout.datacolumn=${outcol} > "${ms}/apply_beam_${time}.log" 2>&1
         """
 }
 
 process ReadTxtLinesandAppend {
-
     input:
-        val ready
-        val dirname
-        val txtname
-        val postfix
+    val ready
+    val dirname
+    val txtname
+    val postfix
 
     output:
-        val ms_string, emit: list_str
-        val ms_postfix_string, emit: list_postfix_str
+    val ms_string, emit: list_str
+    val ms_postfix_string, emit: list_postfix_str
 
     exec:
-        tlist = file( dirname ).resolve( txtname ).readLines()
+    tlist = file(dirname).resolve(txtname).readLines()
 
-        ms_string = tlist.collect {"${it}"}.join(" ")
+    ms_string = tlist.collect { "${it}" }.join(" ")
 
-        ms_postfix_string = tlist.collect {"${it}" + postfix}.join(" ")
-
+    ms_postfix_string = tlist.collect { "${it}" + postfix }.join(" ")
 }
 
 
@@ -947,54 +922,56 @@ process AOFlag {
     publishDir "${params.data.path}", mode: 'move'
     maxForks 6
 
-
     input:
-        val ready
-        path ms
-        val column
-        path aoflagger_strategy
-        val aoflag
-        val interpolate
+    val ready
+    path ms
+    val column
+    path aoflagger_strategy
+    val aoflag
+    val interpolate
 
     output:
-        val true , emit: done
-    
+    val true, emit: done
 
     script:
-        // time=getTime()
+    // time=getTime()
 
-        // if ( interpolate == 1 )
-        //     """
-        //     DP3 steps=[aoflag,interpolate] msin=${ms} msin.datacolumn=${column} aoflag.type=aoflagger aoflag.strategy=${aoflagger_strategy} msout=. msout.overwrite=True > "${params.out.logs}/flag_${ms}_${column}_${time}.log" 2>&1
-        //     """
-        // else
-        //     """
-        //     DP3 steps=[aoflag] msin=${ms} msin.datacolumn=${column} aoflag.type=aoflagger aoflag.strategy=${aoflagger_strategy} msout=. msout.overwrite=True > "${params.out.logs}/flag_${ms}_${column}_${time}.log" 2>&1
-        //     """
+    // if ( interpolate == 1 )
+    //     """
+    //     DP3 steps=[aoflag,interpolate] msin=${ms} msin.datacolumn=${column} aoflag.type=aoflagger aoflag.strategy=${aoflagger_strategy} msout=. msout.overwrite=True > "${params.out.logs}/flag_${ms}_${column}_${time}.log" 2>&1
+    //     """
+    // else
+    //     """
+    //     DP3 steps=[aoflag] msin=${ms} msin.datacolumn=${column} aoflag.type=aoflagger aoflag.strategy=${aoflagger_strategy} msout=. msout.overwrite=True > "${params.out.logs}/flag_${ms}_${column}_${time}.log" 2>&1
+    //     """
 
-        time = getTime()
-        
-        // Build steps list based on selections
-        steps = []
-        if (aoflag == 1) steps << "aoflag"
-        if (interpolate == 1) steps << "interpolate"
-        
-        // Convert to string representation for DP3
-        steps_str = "[" + steps.join(",") + "]"
-        
-        // Build step-specific parameters
-        step_params = []
-        if (aoflag == 1) {
-            step_params << "aoflag.type=aoflagger"
-            step_params << "aoflag.strategy=${aoflagger_strategy}"
-        }
-        if (interpolate == 1) {
-            step_params << "interpolate.type=interpolate"
-        }
-        
-        step_params_str = step_params.join(" ")
-        
-        """
+    time = getTime()
+
+    // Build steps list based on selections
+    steps = []
+    if (aoflag == 1) {
+        steps << "aoflag"
+    }
+    if (interpolate == 1) {
+        steps << "interpolate"
+    }
+
+    // Convert to string representation for DP3
+    steps_str = "[" + steps.join(",") + "]"
+
+    // Build step-specific parameters
+    step_params = []
+    if (aoflag == 1) {
+        step_params << "aoflag.type=aoflagger"
+        step_params << "aoflag.strategy=${aoflagger_strategy}"
+    }
+    if (interpolate == 1) {
+        step_params << "interpolate.type=interpolate"
+    }
+
+    step_params_str = step_params.join(" ")
+
+    """
         DP3 steps=${steps_str} msin=${ms} msin.datacolumn=${column} ${step_params_str} msout=. msout.overwrite=True > "${params.out.logs}/flag_interp_${ms}_${column}_${time}.log" 2>&1
         """
 }
@@ -1006,19 +983,19 @@ process UVWFlag {
     publishDir "${params.data.path}", mode: 'move'
 
     input:
-        val ready
-        path msin
-        val data_column
-        val uvlambdamin
-        val uvlambdamax
+    val ready
+    path msin
+    val data_column
+    val uvlambdamin
+    val uvlambdamax
 
     output:
-        path "${msin}.l${uvlambdamin}to${uvlambdamax}", emit: msout
-        val true , emit: done
+    path "${msin}.l${uvlambdamin}to${uvlambdamax}", emit: msout
+    val true, emit: done
 
     script:
-        time=getTime()
-        """
+    time = getTime()
+    """
         DP3 steps=[uvwflag] msin=${msin} msin.datacolumn=${data_column} uvwflag.uvlambdamin=${uvlambdamin} uvwflag.uvlambdamax=${uvlambdamax} msout=${msin}.l${uvlambdamin}to${uvlambdamax} msout.overwrite=True > "${params.out.logs}/uvwflag_${msin}_${data_column}_${time}.log" 2>&1
         """
 }
@@ -1032,19 +1009,19 @@ process Compress {
     publishDir "${params.data.path}", mode: 'move'
 
     input:
-        path ms
-        val nbits
-        val normalization
-        val distribution
-        val disttruncation
+    path ms
+    val nbits
+    val normalization
+    val distribution
+    val disttruncation
 
     output:
-        // path "${ms.getSimpleName()}_DC.MS"
-        path "${ms.getName().replace(".MS", ".DCMS")}"
+    // path "${ms.getSimpleName()}_DC.MS"
+    path "${ms.getName().replace(".MS", ".DCMS")}"
 
     script:
-        time=getTime()
-        """
+    time = getTime()
+    """
         DP3 steps=[aoflag,interpolate] msin=${ms} msin.datacolumn=DATA aoflag.type=aoflagger aoflag.memoryperc=20 msout="${ms.getName().replace(".MS", ".DCMS")}" msout.storagemanager=dysco msout.storagemanager.databitrate=${nbits} msout.storagemanager.distribution=${distribution} msout.storagemanager.normalization=${normalization} msout.storagemanager.disttruncation=${disttruncation} msout.overwrite=True > "${ms}/compress_after_flagging_col_${time}.log" 2>&1
         """
 }
@@ -1056,25 +1033,27 @@ process Demix {
     publishDir "${params.data.path}", mode: 'move'
 
     input:
-        val enabled
-        path msin
-        path parset
-        path sourcedb
+    val enabled
+    path msin
+    path parset
+    path sourcedb
 
     output:
-        path "${msin.getName().replace(".FMS", ".FDMS")}"
+    path "${msin.getName().replace(".FMS", ".FDMS")}"
 
     script:
-        time=getTime()
+    time = getTime()
 
-        if ( enabled == 1 )
-            """
+    if (enabled == 1) {
+        """
             DP3 ${parset} msin=${msin} demix.skymodel=${sourcedb} msout=${msin.getName().replace(".FMS", ".FDMS")} msout.overwrite=true > "${msin}/demix_${time}.log" 2>&1
             """
-        else
-            """
+    }
+    else {
+        """
             DP3 msin=${msin} steps=[] msout=${msin.getName().replace(".FMS", ".FDMS")} msout.overwrite=true > "${msin}/demix_disabled_${time}.log" 2>&1
             """
+    }
 }
 
 
@@ -1109,26 +1088,25 @@ process Average {
     maxForks 6
 
     input:
-        val ready
-        tuple path(msin), val(msout)
-        val data_column
-        val timestep
-        val freqstep
-
+    val ready
+    tuple path(msin), val(msout)
+    val data_column
+    val timestep
+    val freqstep
 
     output:
-        path "${msout}", emit: averaged_ms
-        val true , emit: done_averaging
+    path "${msout}", emit: averaged_ms
+    val true, emit: done_averaging
 
     script:
-        time=getTime()
-        """
+    time = getTime()
+    """
         python3 ${projectDir}/templates/fill_flagged_weights.py ${msin} --mode nn > "${params.out.logs}/fix_flagged_weights_${msin}_${time}.log" 2>&1
         DP3 steps=[avg] msin=${msin} msin.datacolumn=${data_column} msout=${msout} avg.type=average avg.timestep=${timestep} avg.freqstep=${freqstep} msout.overwrite=True > "${params.out.logs}/average_${msin}_${timestep}tstep_${freqstep}freqstep_${time}.log"
         """
 }
 
-        //taql update ${msin} set WEIGHT_SPECTRUM=1 
+//taql update ${msin} set WEIGHT_SPECTRUM=1 
 //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!REMOVE TAQL BEFORE AVERAGING!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 //Also flags intrastation baselines
@@ -1137,20 +1115,19 @@ process FilterBaselinesAndAverage {
     publishDir params.data.path, mode: 'move'
 
     input:
-        val ready
-        tuple path(msin), val(msout)
-        val data_column
-        val timestep
-        val freqstep
-
+    val ready
+    tuple path(msin), val(msout)
+    val data_column
+    val timestep
+    val freqstep
 
     output:
-        path "${msout}", emit: filtered_averaged_ms
-        val true , emit: done
+    path "${msout}", emit: filtered_averaged_ms
+    val true, emit: done
 
     script:
-        time=getTime()
-        """
+    time = getTime()
+    """
         DP3 steps=[filter,avg] msin=${msin} msin.datacolumn=${data_column} filter.remove=true filter.baseline="[CR]S*&&" avg.type=average avg.timestep=${timestep} avg.freqstep=${freqstep} msout=${msout} msout.overwrite=True > "${params.out.logs}/average_${msin}_${timestep}tstep_${freqstep}freqstep_${time}.log"
         """
 }
@@ -1160,15 +1137,15 @@ process MakeClusters {
     label 'sing'
 
     input:
-        path input_model
-        val number_of_clusters
-        val output_model
-    
+    path input_model
+    val number_of_clusters
+    val output_model
+
     output:
-        path "${output_model}"
-    
+    path "${output_model}"
+
     shell:
-        """
+    """
         cluster !{input_model} !{output_model} !{number_of_clusters}
         """
 }
@@ -1180,7 +1157,7 @@ process MakeClusters {
 //         path solsfile
 //         val nsigma
 //         val mode
-    
+
 //     output:
 //         val true
 
@@ -1195,17 +1172,17 @@ process MakeClusters {
 // }
 
 
-def readTxtIntoString (txt) {
-    List tlist = file(txt).readLines()
-    String tstring = tlist.collect {"${it}"}.join(" ")
+def readTxtIntoString(txt) {
+    def tlist: List = file(txt).readLines()
+    def tstring: String = tlist.collect { "${it}" }.join(" ")
 
     return tstring
 }
 
 
-def readTxtAndAppendString (txt, str) {
-    List tlist = file(txt).readLines()
-    String tstring = tlist.collect {"${it}" + str}.join(" ")
+def readTxtAndAppendString(txt, str) {
+    def tlist: List = file(txt).readLines()
+    def tstring: String = tlist.collect { "${it}" + str }.join(" ")
 
     return tstring
 }
@@ -1219,17 +1196,17 @@ input:      list of strings e.g. ["node100", "node101"]
             file name string e.g "hosts_list.txt"
 output:     The written file
 */
-def writeHosts ( nodes_list, hosts ) {
-    hosts = new File( hosts)
-    if (hosts.exists()){
+def writeHosts(nodes_list, hosts) {
+    hosts = new File(hosts)
+    if (hosts.exists()) {
         hosts.delete()
     }
     hosts.createNewFile()
     hosts.withWriter { out ->
-    nodes_list.each {
-      out.println("${it}")
+        nodes_list.each {
+            out.println("${it}")
+        }
     }
-  }
 }
 
 
@@ -1237,28 +1214,27 @@ def writeHosts ( nodes_list, hosts ) {
 return a list of the nodes with the 'node' prefix given an input string e.g. [node129]
 also assign the master node and number of processes if not provided.
 */
-def parseNodes ( nodes ) {
+def parseNodes(nodes) {
     // log.info """[nextleap*] init > verifying nodes list"""
 
-    if (nodes instanceof String){
-        nodes_list = nodes.split(',').collect{"node${it}"} as List
+    if (nodes instanceof String) {
+        nodes_list = nodes.split(',').collect { "node${it}" } as List
     }
-    // when a single node is given..
     else if (nodes instanceof Integer) {
-        nodes_list = nodes.collect{"node${it}"} as List
+        nodes_list = nodes.collect { "node${it}" } as List
     }
     else {
         log.error("Error: The `data.nodes` parameter is not valid. Got `--data.nodes=${nodes}`")
-        exit 0
+        exit(0)
     }
 
     return nodes_list
 }
 
 
-def makeDirectory ( fileName ) {
+def makeDirectory(fileName) {
     def file = new File(fileName)
-    if(!file.exists()) {
+    if (!file.exists()) {
         file.mkdir()
     }
 }
