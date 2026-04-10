@@ -143,7 +143,6 @@ process Distribute {
 
     script:
     """
-        mkdir -p ${params.out.logs}
         pssh -v -i -h ${launchDir}/${params.data.hosts} -t 0 -x "cd ${params.data.path}; bash" /home/codex/chege/software/nextflow run ${params.stagelib} --stage ${entry} --ch_in ${ch_in} -params-file ${params_file}  -with-singularity ${params.image} --singularity_bind_path ${params.binds} > ${params.out.logs}/${entry}.log 2>&1
         """
 }
